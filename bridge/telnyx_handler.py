@@ -93,3 +93,13 @@ class TelnyxMediaHandler:
     def is_start_event(message: dict) -> bool:
         """Check if this is a start event (stream started)."""
         return message.get("event") == "start"
+
+    @staticmethod
+    def extract_media_format(message: dict) -> dict | None:
+        """Extract media format info from a Telnyx 'start' event.
+
+        Returns e.g. {"encoding": "PCMU", "sample_rate": 8000} or None.
+        """
+        if message.get("event") == "start":
+            return message.get("start", {}).get("media_format")
+        return None

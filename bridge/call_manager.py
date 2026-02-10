@@ -8,7 +8,9 @@ import httpx
 from google.genai import types
 from fastapi import WebSocket
 
-from audio_utils import l16_to_pcm_le, pcm_le_to_l16, resample_audio, chunk_audio
+import audioop
+
+from audio_utils import l16_to_pcm_le, pcm_le_to_l16, resample_audio, chunk_audio, ulaw_to_pcm
 from gemini_bridge import (
     build_system_prompt,
     create_gemini_config,
@@ -294,8 +296,10 @@ async def _bridge_audio(
     media_handler = TelnyxMediaHandler()
 
     async def phone_to_gemini():
-        """Forward phone audio to Gemini. L16 BE → PCM LE (byte swap only)."""
+        """Forward phone audio to Gemini. Decode from stream encoding to PCM 16kHz LE."""
         pkt_count = 0
+        encoding = "PCMU"  # Telnyx default for inbound stream
+        sample_rate = 8000
         try:
             while True:
                 raw = await telnyx_ws.receive_text()
@@ -306,6 +310,16 @@ async def _bridge_audio(
                         f"Telnyx msg #{pkt_count} ({state.call_id}): {raw[:500]}"
                     )
 
+                # Parse start event for media format
+                fmt = media_handler.extract_media_format(message)
+                if fmt:
+                    encoding = fmt.get("encoding", "PCMU")
+                    sample_rate = fmt.get("sample_rate", 8000)
+                    logger.info(
+                        f"Telnyx stream format: {encoding} @ {sample_rate}Hz ({state.call_id})"
+                    )
+                    continue
+
                 if media_handler.is_stop_event(message):
                     logger.info(f"Phone hangup for call {state.call_id}")
                     break
@@ -313,7 +327,20 @@ async def _bridge_audio(
                 audio = media_handler.extract_audio(message)
                 if audio:
                     pkt_count += 1
-                    pcm = l16_to_pcm_le(audio)
+
+                    # Decode to PCM 16-bit little-endian
+                    if encoding == "PCMU":
+                        pcm = ulaw_to_pcm(audio)
+                    elif encoding == "PCMA":
+                        pcm = audioop.alaw2lin(audio, 2)
+                    else:
+                        # L16 or raw PCM — pass through
+                        pcm = l16_to_pcm_le(audio)
+
+                    # Resample to 16kHz if needed
+                    if sample_rate != 16000:
+                        pcm = resample_audio(pcm, sample_rate, 16000)
+
                     await gemini_session.send_realtime_input(
                         audio=types.Blob(
                             data=pcm, mime_type="audio/pcm;rate=16000"

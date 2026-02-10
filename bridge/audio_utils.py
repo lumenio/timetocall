@@ -1,8 +1,15 @@
+import audioop
+
 import numpy as np
 from scipy.signal import resample
 
 # 20ms at 16kHz, 16-bit mono = 320 samples * 2 bytes = 640 bytes
 TELNYX_CHUNK_BYTES = 640
+
+
+def ulaw_to_pcm(data: bytes) -> bytes:
+    """Decode G.711 µ-law to 16-bit linear PCM (little-endian)."""
+    return audioop.ulaw2lin(data, 2)
 
 
 def l16_to_pcm_le(data: bytes) -> bytes:
