@@ -17,11 +17,11 @@ def _telnyx_headers() -> dict[str, str]:
     }
 
 
-async def initiate_call(
-    phone_number: str, stream_url: str, webhook_url: str
-) -> str:
+async def initiate_call(phone_number: str, webhook_url: str) -> str:
     """
-    Initiate an outbound call via Telnyx REST API with L16 codec for raw PCM 16kHz.
+    Initiate an outbound call via Telnyx REST API.
+    Streaming is NOT configured here — it must be started explicitly
+    via start_streaming() after the call is answered.
     Returns the call_control_id.
     """
     async with httpx.AsyncClient(timeout=15.0) as client:
@@ -33,11 +33,6 @@ async def initiate_call(
                 "to": phone_number,
                 "from": os.environ["TELNYX_PHONE_NUMBER"],
                 "webhook_url": webhook_url,
-                "stream_url": stream_url,
-                "stream_track": "outbound_track",
-                "stream_bidirectional_mode": "rtp",
-                "stream_bidirectional_codec": "L16",
-                "stream_bidirectional_sampling_rate": 16000,
             },
         )
         if resp.status_code >= 400:
@@ -48,6 +43,25 @@ async def initiate_call(
 
     logger.info(f"Telnyx call initiated: {call_control_id}")
     return call_control_id
+
+
+async def start_streaming(call_control_id: str, stream_url: str) -> None:
+    """Start audio streaming on an answered call via Call Control API."""
+    async with httpx.AsyncClient(timeout=15.0) as client:
+        resp = await client.post(
+            f"{TELNYX_API_BASE}/calls/{call_control_id}/actions/streaming_start",
+            headers=_telnyx_headers(),
+            json={
+                "stream_url": stream_url,
+                "stream_track": "inbound_track",
+                "stream_bidirectional_mode": "rtp",
+                "stream_bidirectional_codec": "L16",
+            },
+        )
+        if resp.status_code >= 400:
+            logger.error(f"start_streaming error {resp.status_code}: {resp.text}")
+        resp.raise_for_status()
+    logger.info(f"Streaming started for {call_control_id}")
 
 
 async def hangup_call(call_control_id: str) -> None:

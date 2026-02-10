@@ -4,11 +4,12 @@ import time
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 
+import numpy as np
 import httpx
 from google.genai import types
 from fastapi import WebSocket
 
-from audio_utils import l16_to_pcm_le, pcm_le_to_l16, resample_audio, chunk_audio
+from audio_utils import l16_to_pcm_le, pcm_le_to_l16, resample_audio, chunk_audio, ulaw_to_pcm
 from gemini_bridge import (
     build_system_prompt,
     create_gemini_config,
@@ -16,7 +17,7 @@ from gemini_bridge import (
     generate_summary,
     MODEL,
 )
-from telnyx_handler import TelnyxMediaHandler, initiate_call, hangup_call
+from telnyx_handler import TelnyxMediaHandler, initiate_call, start_streaming, hangup_call
 
 logger = logging.getLogger(__name__)
 
@@ -32,6 +33,7 @@ class CallState:
     language: str
     user_name: str
     callback_url: str
+    bridge_public_url: str = ""
     status: str = "pending"
     telnyx_call_control_id: str = ""
     transcript: list[dict] = field(default_factory=list)
@@ -95,19 +97,16 @@ async def start_call(
         language=language,
         user_name=user_name,
         callback_url=callback_url,
+        bridge_public_url=bridge_public_url,
         start_time=time.time(),
     )
     active_calls[call_id] = state
 
-    # Telnyx will connect its WebSocket to this URL
-    stream_url = f"wss://{bridge_public_url}/telnyx/media-stream?call_id={call_id}"
     webhook_url = f"https://{bridge_public_url}/telnyx/webhook"
-
-    logger.info(f"Telnyx stream_url: {stream_url}")
     logger.info(f"Telnyx webhook_url: {webhook_url}")
 
     try:
-        call_control_id = await initiate_call(phone_number, stream_url, webhook_url)
+        call_control_id = await initiate_call(phone_number, webhook_url)
         state.telnyx_call_control_id = call_control_id
         state.status = "dialing"
 
@@ -146,12 +145,28 @@ def find_call_by_telnyx_id(call_control_id: str) -> CallState | None:
     return None
 
 
-async def handle_call_answered(call_id: str):
-    """Called when Telnyx call.answered webhook arrives."""
+async def handle_call_answered(call_id: str, bridge_secret: str):
+    """Called when Telnyx call.answered webhook arrives.
+
+    Sets the answer event and starts audio streaming on the now-active call.
+    Streaming is started here (not in the dial request) so that we capture
+    real call audio instead of silence from the ringing phase.
+    """
     state = active_calls.get(call_id)
-    if state:
-        state.answer_event.set()
-        logger.info(f"Call answered: {call_id}")
+    if not state:
+        return
+
+    state.answer_event.set()
+    logger.info(f"Call answered: {call_id}")
+
+    stream_url = f"wss://{state.bridge_public_url}/telnyx/media-stream?call_id={call_id}"
+    try:
+        await start_streaming(state.telnyx_call_control_id, stream_url)
+    except Exception as e:
+        logger.error(f"start_streaming failed for {call_id}: {e}")
+        await _complete_call(call_id, bridge_secret, failed=True)
+        return
+    logger.info(f"Call answered and streaming started: {call_id}")
 
 
 async def handle_call_hangup(call_id: str, bridge_secret: str):
@@ -234,13 +249,15 @@ async def handle_telnyx_websocket(
         f"WS handler for {call_id}, answered={state.answer_event.is_set()}"
     )
 
-    # If call not yet answered, this is the early media WebSocket.
-    # Wait for either: answer event, or WS close.
+    # Streaming is started via start_streaming() after call.answered,
+    # so the WS should only connect after answer. Safety net: if the
+    # answer event isn't set yet, wait briefly.
     if not state.answer_event.is_set():
-        answered = await _wait_for_answer_or_ws_close(websocket, state)
-        if not answered:
-            logger.info(f"Early media WS closed before answer for {call_id}")
-            return  # No cleanup — second WS will handle the call
+        logger.info(f"WS connected before answer event set for {call_id}, waiting...")
+        try:
+            await asyncio.wait_for(state.answer_event.wait(), timeout=5.0)
+        except asyncio.TimeoutError:
+            logger.warning(f"Answer event timeout on WS for {call_id}, proceeding anyway")
 
     # Call is answered. Start Gemini bridge on this WebSocket.
     state.status = "connected"
@@ -294,8 +311,11 @@ async def _bridge_audio(
     media_handler = TelnyxMediaHandler()
 
     async def phone_to_gemini():
-        """Forward phone audio to Gemini. L16 16kHz → PCM LE passthrough."""
+        """Forward phone audio to Gemini with codec detection and diagnostics."""
         pkt_count = 0
+        # Default to L16 at 16kHz (what we request in start_streaming)
+        codec = "L16"
+        sample_rate = 16000
         try:
             while True:
                 raw = await telnyx_ws.receive_text()
@@ -306,11 +326,14 @@ async def _bridge_audio(
                         f"Telnyx msg #{pkt_count} ({state.call_id}): {raw[:500]}"
                     )
 
-                # Log media format from start event
+                # Parse start event for actual codec/format info
                 fmt = media_handler.extract_media_format(message)
                 if fmt:
+                    codec = fmt.get("encoding", codec)
+                    sample_rate = fmt.get("sample_rate", sample_rate)
                     logger.info(
-                        f"Telnyx stream format: {fmt} ({state.call_id})"
+                        f"Telnyx stream format: encoding={codec} "
+                        f"sample_rate={sample_rate} ({state.call_id})"
                     )
                     continue
 
@@ -321,7 +344,28 @@ async def _bridge_audio(
                 audio = media_handler.extract_audio(message)
                 if audio:
                     pkt_count += 1
-                    pcm = l16_to_pcm_le(audio)
+
+                    # Convert to PCM LE 16kHz based on detected codec
+                    if codec == "PCMU":
+                        pcm = ulaw_to_pcm(audio)
+                        if sample_rate != 16000:
+                            pcm = resample_audio(pcm, sample_rate, 16000)
+                    else:
+                        # L16 — passthrough (already little-endian in practice)
+                        pcm = l16_to_pcm_le(audio)
+                        if sample_rate != 16000:
+                            pcm = resample_audio(pcm, sample_rate, 16000)
+
+                    # Audio amplitude diagnostics every 50 packets
+                    if pkt_count % 50 == 1:
+                        samples = np.frombuffer(pcm, dtype=np.int16)
+                        if len(samples) > 0:
+                            rms = int(np.sqrt(np.mean(samples.astype(np.float64) ** 2)))
+                            logger.info(
+                                f"Phone audio stats pkt#{pkt_count} ({state.call_id}): "
+                                f"min={samples.min()} max={samples.max()} rms={rms} "
+                                f"bytes={len(pcm)} codec={codec}"
+                            )
 
                     await gemini_session.send_realtime_input(
                         audio=types.Blob(

@@ -125,7 +125,7 @@ async def telnyx_webhook(request: Request):
     if event_type == "call.answered":
         state = call_manager.find_call_by_telnyx_id(call_control_id)
         if state:
-            await call_manager.handle_call_answered(state.call_id)
+            await call_manager.handle_call_answered(state.call_id, BRIDGE_SECRET)
         else:
             logger.warning(f"call.answered for unknown call_control_id: {call_control_id}")
 

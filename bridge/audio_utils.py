@@ -20,6 +20,20 @@ def chunk_audio(audio_bytes: bytes, chunk_size: int = TELNYX_CHUNK_BYTES) -> lis
     return [audio_bytes[i:i + chunk_size] for i in range(0, len(audio_bytes), chunk_size)]
 
 
+def ulaw_to_pcm(data: bytes) -> bytes:
+    """Decode G.711 mu-law to 16-bit linear PCM little-endian using numpy."""
+    ulaw = np.frombuffer(data, dtype=np.uint8)
+    ulaw = ulaw.astype(np.int16)
+    ulaw = ~ulaw & 0xFF
+    sign = (ulaw >> 7) & 1
+    exponent = (ulaw >> 4) & 0x07
+    mantissa = ulaw & 0x0F
+    magnitude = ((mantissa << 1) | 0x21) << (exponent + 2)
+    magnitude = magnitude - 0x84
+    pcm = np.where(sign, -magnitude, magnitude).astype(np.int16)
+    return pcm.tobytes()
+
+
 def resample_audio(audio_bytes: bytes, from_rate: int, to_rate: int) -> bytes:
     """Resample PCM 16-bit little-endian audio between sample rates."""
     if not audio_bytes or from_rate == to_rate:
