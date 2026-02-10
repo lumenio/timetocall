@@ -317,101 +317,124 @@ async def _gemini_reader(
     """
     media_handler = TelnyxMediaHandler()
     pkt_count = 0
+    total_responses = 0
     try:
-        async for response in state.gemini_session.receive():
-            if pkt_count < 3:
-                logger.info(
-                    f"Gemini response ({state.call_id}): "
-                    f"data={len(response.data) if response.data else 0}B, "
-                    f"server_content={response.server_content is not None}, "
-                    f"text={response.text if hasattr(response, 'text') and response.text else None}"
-                )
+        while True:
+            async for response in state.gemini_session.receive():
+                total_responses += 1
 
-            # Check max duration
-            if (
-                state.connected_time
-                and time.time() - state.connected_time > MAX_CALL_DURATION
-            ):
-                logger.info(
-                    f"Max duration reached for call {state.call_id}"
-                )
-                break
-
-            # Audio data from Gemini
-            if response.data:
-                pkt_count += 1
-                target_rate = state.stream_sample_rate
-                audio_resampled = resample_audio(response.data, 24000, target_rate)
-                audio_l16 = pcm_le_to_l16(audio_resampled)
-                # Dynamic chunk size: 20ms at target_rate (samples * 2 bytes)
-                chunk_bytes = int(target_rate * 0.02) * 2
-                chunks = chunk_audio(audio_l16, chunk_size=chunk_bytes)
-
-                # Send to whichever WS is currently active
-                ws = state.current_telnyx_ws
-                if ws is not None:
-                    try:
-                        for ch in chunks:
-                            message = media_handler.format_audio_message(ch)
-                            await ws.send_text(message)
-                    except Exception as e:
-                        logger.warning(
-                            f"Gemini→Phone: send failed (WS likely closed), "
-                            f"skipping pkt {pkt_count} ({state.call_id}): {e}"
-                        )
-                else:
-                    if pkt_count % 50 == 1:
-                        logger.warning(
-                            f"Gemini→Phone: no active WS, skipping pkt {pkt_count} ({state.call_id})"
-                        )
-
-                if pkt_count <= 3 or pkt_count % 100 == 0:
+                if total_responses <= 3:
+                    sc = response.server_content
                     logger.info(
-                        f"Gemini→Phone: pkt {pkt_count}, {len(response.data)} bytes, "
-                        f"{len(chunks)} chunks ({state.call_id})"
+                        f"Gemini response ({state.call_id}): "
+                        f"data={len(response.data) if response.data else 0}B, "
+                        f"server_content={sc is not None}, "
+                        f"turn_complete={sc.turn_complete if sc and hasattr(sc, 'turn_complete') else None}"
                     )
 
-            # Transcriptions
-            if response.server_content:
-                sc = response.server_content
-
+                # Check max duration
                 if (
-                    hasattr(sc, "output_transcription")
-                    and sc.output_transcription
-                    and sc.output_transcription.text
+                    state.connected_time
+                    and time.time() - state.connected_time > MAX_CALL_DURATION
                 ):
-                    entry = {
-                        "speaker": "agent",
-                        "text": sc.output_transcription.text,
-                        "timestamp": datetime.now(timezone.utc).isoformat(),
-                    }
-                    state.transcript.append(entry)
-                    await send_callback(
-                        state.callback_url,
-                        "transcript_update",
-                        state.call_id,
-                        bridge_secret,
-                        transcript_entry=entry,
+                    logger.info(
+                        f"Max duration reached for call {state.call_id}"
                     )
+                    return
 
-                if (
-                    hasattr(sc, "input_transcription")
-                    and sc.input_transcription
-                    and sc.input_transcription.text
-                ):
-                    entry = {
-                        "speaker": "callee",
-                        "text": sc.input_transcription.text,
-                        "timestamp": datetime.now(timezone.utc).isoformat(),
-                    }
-                    state.transcript.append(entry)
-                    await send_callback(
-                        state.callback_url,
-                        "transcript_update",
-                        state.call_id,
-                        bridge_secret,
-                        transcript_entry=entry,
-                    )
+                # Log turn_complete and interrupted events
+                if response.server_content:
+                    sc = response.server_content
+                    if hasattr(sc, 'turn_complete') and sc.turn_complete:
+                        logger.info(f"Gemini turn_complete ({state.call_id})")
+                    if hasattr(sc, 'interrupted') and sc.interrupted:
+                        logger.info(f"Gemini interrupted by user ({state.call_id})")
+
+                # Audio data from Gemini
+                if response.data:
+                    pkt_count += 1
+                    target_rate = state.stream_sample_rate
+                    audio_resampled = resample_audio(response.data, 24000, target_rate)
+                    audio_l16 = pcm_le_to_l16(audio_resampled)
+                    # Dynamic chunk size: 20ms at target_rate (samples * 2 bytes)
+                    chunk_bytes = int(target_rate * 0.02) * 2
+                    chunks = chunk_audio(audio_l16, chunk_size=chunk_bytes)
+
+                    # Send to whichever WS is currently active
+                    ws = state.current_telnyx_ws
+                    if ws is not None:
+                        try:
+                            for ch in chunks:
+                                message = media_handler.format_audio_message(ch)
+                                await ws.send_text(message)
+                        except Exception as e:
+                            logger.warning(
+                                f"Gemini→Phone: send failed (WS likely closed), "
+                                f"skipping pkt {pkt_count} ({state.call_id}): {e}"
+                            )
+                    else:
+                        if pkt_count % 50 == 1:
+                            logger.warning(
+                                f"Gemini→Phone: no active WS, skipping pkt {pkt_count} ({state.call_id})"
+                            )
+
+                    if pkt_count <= 3 or pkt_count % 100 == 0:
+                        logger.info(
+                            f"Gemini→Phone: pkt {pkt_count}, {len(response.data)} bytes, "
+                            f"{len(chunks)} chunks ({state.call_id})"
+                        )
+
+                    # Periodic stats
+                    if pkt_count % 30 == 0:
+                        logger.info(
+                            f"Gemini stats ({state.call_id}): {pkt_count} audio pkts, "
+                            f"{total_responses} total responses"
+                        )
+
+                # Transcriptions
+                if response.server_content:
+                    sc = response.server_content
+
+                    if (
+                        hasattr(sc, "output_transcription")
+                        and sc.output_transcription
+                        and sc.output_transcription.text
+                    ):
+                        entry = {
+                            "speaker": "agent",
+                            "text": sc.output_transcription.text,
+                            "timestamp": datetime.now(timezone.utc).isoformat(),
+                        }
+                        state.transcript.append(entry)
+                        asyncio.create_task(send_callback(
+                            state.callback_url,
+                            "transcript_update",
+                            state.call_id,
+                            bridge_secret,
+                            transcript_entry=entry,
+                        ))
+
+                    if (
+                        hasattr(sc, "input_transcription")
+                        and sc.input_transcription
+                        and sc.input_transcription.text
+                    ):
+                        entry = {
+                            "speaker": "callee",
+                            "text": sc.input_transcription.text,
+                            "timestamp": datetime.now(timezone.utc).isoformat(),
+                        }
+                        state.transcript.append(entry)
+                        asyncio.create_task(send_callback(
+                            state.callback_url,
+                            "transcript_update",
+                            state.call_id,
+                            bridge_secret,
+                            transcript_entry=entry,
+                        ))
+
+            # receive() ended (turn_complete) — loop back for next turn
+            logger.info(f"Gemini turn complete, awaiting next turn ({state.call_id})")
     except asyncio.CancelledError:
         logger.info(f"Gemini reader cancelled for call {state.call_id} (pkt_count={pkt_count})")
         raise
