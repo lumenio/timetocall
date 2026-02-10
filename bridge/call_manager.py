@@ -310,12 +310,12 @@ async def _bridge_audio(
     """Bridge audio between Telnyx WebSocket and Gemini Live API session."""
     media_handler = TelnyxMediaHandler()
 
+    # Shared between coroutines so gemini_to_phone can use detected sample rate
+    stream_info = {"sample_rate": 16000, "codec": "L16"}
+
     async def phone_to_gemini():
         """Forward phone audio to Gemini with codec detection and diagnostics."""
         pkt_count = 0
-        # Default to L16 at 16kHz (what we request in start_streaming)
-        codec = "L16"
-        sample_rate = 16000
         try:
             while True:
                 raw = await telnyx_ws.receive_text()
@@ -329,11 +329,11 @@ async def _bridge_audio(
                 # Parse start event for actual codec/format info
                 fmt = media_handler.extract_media_format(message)
                 if fmt:
-                    codec = fmt.get("encoding", codec)
-                    sample_rate = fmt.get("sample_rate", sample_rate)
+                    stream_info["codec"] = fmt.get("encoding", stream_info["codec"])
+                    stream_info["sample_rate"] = fmt.get("sample_rate", stream_info["sample_rate"])
                     logger.info(
-                        f"Telnyx stream format: encoding={codec} "
-                        f"sample_rate={sample_rate} ({state.call_id})"
+                        f"Telnyx stream format: encoding={stream_info['codec']} "
+                        f"sample_rate={stream_info['sample_rate']} ({state.call_id})"
                     )
                     continue
 
@@ -346,15 +346,15 @@ async def _bridge_audio(
                     pkt_count += 1
 
                     # Convert to PCM LE 16kHz based on detected codec
-                    if codec == "PCMU":
+                    if stream_info["codec"] == "PCMU":
                         pcm = ulaw_to_pcm(audio)
-                        if sample_rate != 16000:
-                            pcm = resample_audio(pcm, sample_rate, 16000)
+                        if stream_info["sample_rate"] != 16000:
+                            pcm = resample_audio(pcm, stream_info["sample_rate"], 16000)
                     else:
                         # L16 — passthrough (already little-endian in practice)
                         pcm = l16_to_pcm_le(audio)
-                        if sample_rate != 16000:
-                            pcm = resample_audio(pcm, sample_rate, 16000)
+                        if stream_info["sample_rate"] != 16000:
+                            pcm = resample_audio(pcm, stream_info["sample_rate"], 16000)
 
                     # Audio amplitude diagnostics every 50 packets
                     if pkt_count % 50 == 1:
@@ -364,7 +364,7 @@ async def _bridge_audio(
                             logger.info(
                                 f"Phone audio stats pkt#{pkt_count} ({state.call_id}): "
                                 f"min={samples.min()} max={samples.max()} rms={rms} "
-                                f"bytes={len(pcm)} codec={codec}"
+                                f"bytes={len(pcm)} codec={stream_info['codec']}"
                             )
 
                     await gemini_session.send_realtime_input(
@@ -410,9 +410,12 @@ async def _bridge_audio(
                 # Audio data from Gemini
                 if response.data:
                     pkt_count += 1
-                    audio_16k = resample_audio(response.data, 24000, 16000)
-                    audio_l16 = pcm_le_to_l16(audio_16k)
-                    chunks = chunk_audio(audio_l16)
+                    target_rate = stream_info["sample_rate"]
+                    audio_resampled = resample_audio(response.data, 24000, target_rate)
+                    audio_l16 = pcm_le_to_l16(audio_resampled)
+                    # Dynamic chunk size: 20ms at target_rate (samples * 2 bytes)
+                    chunk_bytes = int(target_rate * 0.02) * 2
+                    chunks = chunk_audio(audio_l16, chunk_size=chunk_bytes)
                     for ch in chunks:
                         message = media_handler.format_audio_message(ch)
                         await telnyx_ws.send_text(message)

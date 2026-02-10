@@ -56,6 +56,7 @@ async def start_streaming(call_control_id: str, stream_url: str) -> None:
                 "stream_track": "inbound_track",
                 "stream_bidirectional_mode": "rtp",
                 "stream_bidirectional_codec": "L16",
+                "stream_bidirectional_sampling_rate": 16000,
             },
         )
         if resp.status_code >= 400:
