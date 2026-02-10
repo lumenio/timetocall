@@ -44,6 +44,7 @@ async def startup():
         f"phone={phone} "
         f"api_key={'set' if api_key else 'MISSING'}"
     )
+    logger.info(f"Bridge public URL: {BRIDGE_PUBLIC_URL}")
     logger.info("Audio bridge server started")
 
 

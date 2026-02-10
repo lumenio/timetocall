@@ -102,6 +102,9 @@ async def start_call(
     stream_url = f"wss://{bridge_public_url}/telnyx/media-stream?call_id={call_id}"
     webhook_url = f"https://{bridge_public_url}/telnyx/webhook"
 
+    logger.info(f"Telnyx stream_url: {stream_url}")
+    logger.info(f"Telnyx webhook_url: {webhook_url}")
+
     try:
         call_control_id = await initiate_call(phone_number, stream_url, webhook_url)
         state.telnyx_call_control_id = call_control_id
