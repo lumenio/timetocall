@@ -1,23 +1,21 @@
 import numpy as np
 from scipy.signal import resample
 
-# 20ms at 16kHz, 16-bit mono = 320 samples * 2 bytes = 640 bytes
-TELNYX_CHUNK_BYTES = 640
-
 
 def l16_to_pcm_le(data: bytes) -> bytes:
-    """Telnyx L16 over WebSocket is already little-endian in practice. No conversion needed."""
-    return data
+    """Convert L16 (big-endian per RFC 2586) to PCM little-endian for Gemini."""
+    if not data:
+        return b""
+    samples = np.frombuffer(data, dtype=">i2")  # big-endian int16
+    return samples.astype("<i2").tobytes()  # little-endian int16
 
 
 def pcm_le_to_l16(data: bytes) -> bytes:
-    """Telnyx accepts little-endian PCM directly. No conversion needed."""
-    return data
-
-
-def chunk_audio(audio_bytes: bytes, chunk_size: int = TELNYX_CHUNK_BYTES) -> list[bytes]:
-    """Split audio into RTP-sized chunks for Telnyx (default 640 bytes = 20ms at 16kHz)."""
-    return [audio_bytes[i:i + chunk_size] for i in range(0, len(audio_bytes), chunk_size)]
+    """Convert PCM little-endian (from Gemini) to L16 big-endian for Telnyx."""
+    if not data:
+        return b""
+    samples = np.frombuffer(data, dtype="<i2")  # little-endian int16
+    return samples.astype(">i2").tobytes()  # big-endian int16
 
 
 def resample_audio(audio_bytes: bytes, from_rate: int, to_rate: int) -> bytes:

@@ -1,16 +1,14 @@
 import asyncio
 import logging
-import struct
 import time
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from typing import Any
 
 import httpx
 from google.genai import types
 from fastapi import WebSocket
 
-from audio_utils import l16_to_pcm_le, pcm_le_to_l16, resample_audio, chunk_audio
+from audio_utils import l16_to_pcm_le, pcm_le_to_l16, resample_audio
 from gemini_bridge import (
     build_system_prompt,
     create_gemini_config,
@@ -40,11 +38,6 @@ class CallState:
     start_time: float = 0.0
     connected_time: float = 0.0
     answer_event: asyncio.Event = field(default_factory=asyncio.Event)
-    # Gemini session (persistent across Telnyx WS reconnections)
-    gemini_session: Any = None
-    gemini_session_ready: asyncio.Event = field(default_factory=asyncio.Event)
-    gemini_to_phone_queue: asyncio.Queue = field(default_factory=lambda: asyncio.Queue(maxsize=200))
-    gemini_task: asyncio.Task | None = None
 
 
 # In-memory registry of active calls
@@ -214,24 +207,68 @@ async def _no_answer_timeout(call_id: str, bridge_secret: str):
         await _complete_call(call_id, bridge_secret, failed=True)
 
 
-async def _gemini_session_task(state: CallState, bridge_secret: str):
-    """Long-lived task that owns the Gemini Live session for the entire call.
-
-    Creates one Gemini session and runs the receive loop. Audio from Gemini
-    is resampled and placed on state.gemini_to_phone_queue for the WS bridge
-    to consume. This task survives Telnyx WS reconnections.
+async def handle_telnyx_websocket(
+    websocket: WebSocket,
+    call_id: str,
+    bridge_secret: str,
+):
     """
-    client = create_gemini_client()
-    system_prompt = build_system_prompt(state.briefing, state.user_name, state.language)
+    Handle a Telnyx media WebSocket connection.
+
+    Telnyx may open TWO WebSocket connections per call:
+    1. Early media WS — before call.answered (ringing/comfort noise)
+    2. Active media WS — after call.answered (actual call audio)
+
+    This handler waits for the answer event before starting Gemini.
+    If the WS closes before the call is answered (early media WS
+    being replaced), it returns cleanly without cleanup so the
+    second WS can take over.
+    """
+    state = active_calls.get(call_id)
+    if not state:
+        logger.error(f"No active call found for {call_id}")
+        await websocket.close()
+        return
+
+    logger.info(
+        f"WS handler for {call_id}, answered={state.answer_event.is_set()}"
+    )
+
+    # If call not yet answered, this is the early media WebSocket.
+    # Wait for either: answer event, or WS close.
+    if not state.answer_event.is_set():
+        answered = await _wait_for_answer_or_ws_close(websocket, state)
+        if not answered:
+            logger.info(f"Early media WS closed before answer for {call_id}")
+            return  # No cleanup — second WS will handle the call
+
+    # Call is answered. Start Gemini bridge on this WebSocket.
+    state.status = "connected"
+    state.connected_time = time.time()
+
+    await send_callback(
+        state.callback_url,
+        "status_update",
+        call_id,
+        bridge_secret,
+        status="connected",
+    )
+
+    # Build Gemini session
+    system_prompt = build_system_prompt(
+        state.briefing, state.user_name, state.language
+    )
     config = create_gemini_config(system_prompt)
+    client = create_gemini_client()
 
     try:
-        async with client.aio.live.connect(model=MODEL, config=config) as session:
-            state.gemini_session = session
-            state.gemini_session_ready.set()
-            logger.info(f"Gemini Live session connected for call {state.call_id}")
+        async with client.aio.live.connect(
+            model=MODEL, config=config
+        ) as session:
+            logger.info(f"Gemini Live session connected for call {call_id}")
 
-            # Trigger Gemini to start the conversation
+            # Trigger Gemini to start the conversation — without this,
+            # both sides sit in silence waiting for the other to speak.
             await session.send_client_content(
                 turns=types.Content(
                     role="user",
@@ -239,31 +276,94 @@ async def _gemini_session_task(state: CallState, bridge_secret: str):
                 ),
                 turn_complete=True,
             )
-            logger.info(f"Sent initial prompt to Gemini for call {state.call_id}")
+            logger.info(f"Sent initial prompt to Gemini for call {call_id}")
 
-            pkt_count = 0
-            async for response in session.receive():
+            await _bridge_audio(websocket, session, state, bridge_secret)
+    except Exception as e:
+        logger.error(f"Gemini session error for call {call_id}: {e}")
+    # NOTE: No _complete_call here. The hangup webhook handles call completion.
+
+
+async def _bridge_audio(
+    telnyx_ws: WebSocket,
+    gemini_session,
+    state: CallState,
+    bridge_secret: str,
+):
+    """Bridge audio between Telnyx WebSocket and Gemini Live API session."""
+    media_handler = TelnyxMediaHandler()
+
+    async def phone_to_gemini():
+        """Forward phone audio to Gemini. L16 BE → PCM LE (byte swap only)."""
+        pkt_count = 0
+        try:
+            while True:
+                raw = await telnyx_ws.receive_text()
+                message = media_handler.parse_message(raw)
+
+                if pkt_count < 3:
+                    logger.info(
+                        f"Telnyx msg #{pkt_count} ({state.call_id}): {raw[:500]}"
+                    )
+
+                if media_handler.is_stop_event(message):
+                    logger.info(f"Phone hangup for call {state.call_id}")
+                    break
+
+                audio = media_handler.extract_audio(message)
+                if audio:
+                    pkt_count += 1
+                    pcm = l16_to_pcm_le(audio)
+                    await gemini_session.send_realtime_input(
+                        audio=types.Blob(
+                            data=pcm, mime_type="audio/pcm;rate=16000"
+                        )
+                    )
+                    if pkt_count % 100 == 0:
+                        logger.info(
+                            f"Phone→Gemini: {pkt_count} packets ({state.call_id})"
+                        )
+                elif message.get("event") == "media":
+                    if pkt_count == 0:
+                        logger.warning(
+                            f"Media event but no audio extracted ({state.call_id}): {raw[:300]}"
+                        )
+        except Exception as e:
+            logger.error(f"phone_to_gemini error ({state.call_id}): {e}")
+
+    async def gemini_to_phone():
+        """Forward Gemini audio to phone. PCM 24kHz LE → resample 16kHz → L16 BE."""
+        pkt_count = 0
+        try:
+            async for response in gemini_session.receive():
+                if pkt_count < 3:
+                    logger.info(
+                        f"Gemini response ({state.call_id}): "
+                        f"data={len(response.data) if response.data else 0}B, "
+                        f"server_content={response.server_content is not None}, "
+                        f"text={response.text if hasattr(response, 'text') and response.text else None}"
+                    )
+
                 # Check max duration
-                if state.connected_time and time.time() - state.connected_time > MAX_CALL_DURATION:
-                    logger.info(f"Max duration reached for call {state.call_id}")
+                if (
+                    state.connected_time
+                    and time.time() - state.connected_time > MAX_CALL_DURATION
+                ):
+                    logger.info(
+                        f"Max duration reached for call {state.call_id}"
+                    )
                     break
 
                 # Audio data from Gemini
                 if response.data:
                     pkt_count += 1
                     audio_16k = resample_audio(response.data, 24000, 16000)
-                    try:
-                        state.gemini_to_phone_queue.put_nowait(audio_16k)
-                    except asyncio.QueueFull:
-                        # Drop oldest to avoid unbounded lag
-                        try:
-                            state.gemini_to_phone_queue.get_nowait()
-                        except asyncio.QueueEmpty:
-                            pass
-                        state.gemini_to_phone_queue.put_nowait(audio_16k)
+                    audio_l16 = pcm_le_to_l16(audio_16k)
+                    message = media_handler.format_audio_message(audio_l16)
+                    await telnyx_ws.send_text(message)
                     if pkt_count <= 3 or pkt_count % 100 == 0:
                         logger.info(
-                            f"Gemini→Queue: pkt {pkt_count}, {len(response.data)} bytes ({state.call_id})"
+                            f"Gemini→Phone: pkt {pkt_count}, {len(response.data)} bytes ({state.call_id})"
                         )
 
                 # Transcriptions
@@ -307,84 +407,6 @@ async def _gemini_session_task(state: CallState, bridge_secret: str):
                             bridge_secret,
                             transcript_entry=entry,
                         )
-    except asyncio.CancelledError:
-        logger.info(f"Gemini session task cancelled for {state.call_id}")
-    except Exception as e:
-        logger.error(f"Gemini session task error for {state.call_id}: {e}")
-    finally:
-        state.gemini_session = None
-        logger.info(f"Gemini session task ended for {state.call_id}")
-
-
-def _trim_queue(queue: asyncio.Queue, max_items: int = 25):
-    """Discard old items from queue, keeping at most max_items."""
-    while queue.qsize() > max_items:
-        try:
-            queue.get_nowait()
-        except asyncio.QueueEmpty:
-            break
-
-
-async def _bridge_ws_audio(websocket: WebSocket, state: CallState):
-    """Bridge a single Telnyx WebSocket connection to the persistent Gemini session."""
-    media_handler = TelnyxMediaHandler()
-
-    async def phone_to_gemini():
-        """Forward phone audio to Gemini. No byte-swap needed."""
-        pkt_count = 0
-        try:
-            while True:
-                raw = await websocket.receive_text()
-                message = media_handler.parse_message(raw)
-
-                if media_handler.is_stop_event(message):
-                    logger.info(f"Phone hangup for call {state.call_id}")
-                    break
-
-                audio = media_handler.extract_audio(message)
-                if audio:
-                    pkt_count += 1
-
-                    # Diagnostic logging for first 5 packets
-                    if pkt_count <= 5 and len(audio) >= 8:
-                        le_samples = struct.unpack_from('<4h', audio[:8])
-                        be_samples = struct.unpack_from('>4h', audio[:8])
-                        logger.info(
-                            f"Audio diag pkt#{pkt_count} ({state.call_id}): "
-                            f"LE={le_samples} BE={be_samples} len={len(audio)}"
-                        )
-
-                    pcm = l16_to_pcm_le(audio)  # no-op, already LE
-                    if state.gemini_session:
-                        await state.gemini_session.send_realtime_input(
-                            audio=types.Blob(
-                                data=pcm, mime_type="audio/pcm;rate=16000"
-                            )
-                        )
-                    if pkt_count % 100 == 0:
-                        logger.info(
-                            f"Phone→Gemini: {pkt_count} packets ({state.call_id})"
-                        )
-        except Exception as e:
-            logger.error(f"phone_to_gemini error ({state.call_id}): {e}")
-
-    async def gemini_to_phone():
-        """Read from Gemini queue, chunk, and send to phone WS."""
-        pkt_count = 0
-        try:
-            while True:
-                audio_16k = await state.gemini_to_phone_queue.get()
-                audio_l16 = pcm_le_to_l16(audio_16k)  # no-op, already LE
-                chunks = chunk_audio(audio_l16)
-                for ch in chunks:
-                    message = media_handler.format_audio_message(ch)
-                    await websocket.send_text(message)
-                pkt_count += 1
-                if pkt_count <= 3 or pkt_count % 100 == 0:
-                    logger.info(
-                        f"Gemini→Phone: pkt {pkt_count}, {len(audio_16k)} bytes, "
-                        f"{len(chunks)} chunks ({state.call_id})"
-                    )
         except Exception as e:
             logger.error(f"gemini_to_phone error ({state.call_id}): {e}")
 
@@ -397,77 +419,13 @@ async def _bridge_ws_audio(websocket: WebSocket, state: CallState):
         return_when=asyncio.FIRST_COMPLETED,
     )
 
+    # Cancel the remaining task
     for task in pending:
         task.cancel()
         try:
             await task
         except asyncio.CancelledError:
             pass
-
-
-async def handle_telnyx_websocket(
-    websocket: WebSocket,
-    call_id: str,
-    bridge_secret: str,
-):
-    """
-    Handle a Telnyx media WebSocket connection.
-
-    Telnyx may open multiple WebSocket connections per call:
-    - Early media WS — before call.answered (ringing/comfort noise)
-    - Active media WS — after call.answered (actual call audio)
-    - Telnyx may also reconnect the WS every ~10s during the call
-
-    The Gemini session is created once (on first post-answer WS) and
-    persists across WS reconnections so conversation context is preserved.
-    """
-    state = active_calls.get(call_id)
-    if not state:
-        logger.error(f"No active call found for {call_id}")
-        await websocket.close()
-        return
-
-    logger.info(
-        f"WS handler for {call_id}, answered={state.answer_event.is_set()}, "
-        f"gemini_task={'yes' if state.gemini_task else 'no'}"
-    )
-
-    # If call not yet answered, this is the early media WebSocket.
-    # Wait for either: answer event, or WS close.
-    if not state.answer_event.is_set():
-        answered = await _wait_for_answer_or_ws_close(websocket, state)
-        if not answered:
-            logger.info(f"Early media WS closed before answer for {call_id}")
-            return  # No cleanup — next WS will handle the call
-
-    # First post-answer WS: start the persistent Gemini session task
-    if state.gemini_task is None:
-        state.status = "connected"
-        state.connected_time = time.time()
-
-        await send_callback(
-            state.callback_url,
-            "status_update",
-            call_id,
-            bridge_secret,
-            status="connected",
-        )
-
-        state.gemini_task = asyncio.create_task(
-            _gemini_session_task(state, bridge_secret)
-        )
-        await state.gemini_session_ready.wait()
-    else:
-        # WS reconnection — reuse existing Gemini session
-        logger.info(f"WS reconnected for {call_id}, reusing Gemini session")
-        _trim_queue(state.gemini_to_phone_queue, max_items=25)
-
-    if state.gemini_session is None:
-        logger.error(f"Gemini session not available for {call_id}")
-        return
-
-    # Bridge this WS connection to the persistent Gemini session
-    await _bridge_ws_audio(websocket, state)
 
 
 async def _complete_call(
@@ -480,14 +438,6 @@ async def _complete_call(
 
     if state.status == "completed" or state.status == "failed":
         return
-
-    # Cancel the persistent Gemini session task
-    if state.gemini_task:
-        state.gemini_task.cancel()
-        try:
-            await state.gemini_task
-        except asyncio.CancelledError:
-            pass
 
     duration = 0
     if state.connected_time:
