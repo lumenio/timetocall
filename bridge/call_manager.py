@@ -43,6 +43,10 @@ class CallState:
     answer_event: asyncio.Event = field(default_factory=asyncio.Event)
     gemini_session: Any = None       # Gemini Live session (persists across WS reconnects)
     _gemini_ctx: Any = None          # Context manager ref for cleanup
+    current_telnyx_ws: Any = None    # Currently active Telnyx WS (updated on reconnect)
+    _gemini_reader_task: Any = None  # Persistent Gemini→Phone reader task
+    stream_sample_rate: int = 16000  # Detected from Telnyx start event
+    stream_codec: str = "L16"        # Detected from Telnyx start event
 
 
 # In-memory registry of active calls
@@ -225,6 +229,196 @@ async def _no_answer_timeout(call_id: str, bridge_secret: str):
         await _complete_call(call_id, bridge_secret, failed=True)
 
 
+async def _phone_to_gemini(
+    websocket: WebSocket,
+    state: CallState,
+):
+    """Forward phone audio to Gemini. Runs per-WS connection (exits when WS closes)."""
+    media_handler = TelnyxMediaHandler()
+    pkt_count = 0
+    try:
+        while True:
+            raw = await websocket.receive_text()
+            message = media_handler.parse_message(raw)
+
+            if pkt_count < 3:
+                logger.info(
+                    f"Telnyx msg #{pkt_count} ({state.call_id}): {raw[:500]}"
+                )
+
+            # Parse start event for actual codec/format info
+            fmt = media_handler.extract_media_format(message)
+            if fmt:
+                state.stream_codec = fmt.get("encoding", state.stream_codec)
+                state.stream_sample_rate = fmt.get("sample_rate", state.stream_sample_rate)
+                logger.info(
+                    f"Telnyx stream format: encoding={state.stream_codec} "
+                    f"sample_rate={state.stream_sample_rate} ({state.call_id})"
+                )
+                continue
+
+            if media_handler.is_stop_event(message):
+                logger.info(f"Phone hangup for call {state.call_id}")
+                break
+
+            audio = media_handler.extract_audio(message)
+            if audio:
+                pkt_count += 1
+
+                # Convert to PCM LE 16kHz based on detected codec
+                if state.stream_codec == "PCMU":
+                    pcm = ulaw_to_pcm(audio)
+                    if state.stream_sample_rate != 16000:
+                        pcm = resample_audio(pcm, state.stream_sample_rate, 16000)
+                else:
+                    # L16 — passthrough (already little-endian in practice)
+                    pcm = l16_to_pcm_le(audio)
+                    if state.stream_sample_rate != 16000:
+                        pcm = resample_audio(pcm, state.stream_sample_rate, 16000)
+
+                # Audio amplitude diagnostics every 50 packets
+                if pkt_count % 50 == 1:
+                    samples = np.frombuffer(pcm, dtype=np.int16)
+                    if len(samples) > 0:
+                        rms = int(np.sqrt(np.mean(samples.astype(np.float64) ** 2)))
+                        logger.info(
+                            f"Phone audio stats pkt#{pkt_count} ({state.call_id}): "
+                            f"min={samples.min()} max={samples.max()} rms={rms} "
+                            f"bytes={len(pcm)} codec={state.stream_codec}"
+                        )
+
+                await state.gemini_session.send_realtime_input(
+                    audio=types.Blob(
+                        data=pcm, mime_type="audio/pcm;rate=16000"
+                    )
+                )
+                if pkt_count % 100 == 0:
+                    logger.info(
+                        f"Phone→Gemini: {pkt_count} packets ({state.call_id})"
+                    )
+            elif message.get("event") == "media":
+                if pkt_count == 0:
+                    logger.warning(
+                        f"Media event but no audio extracted ({state.call_id}): {raw[:300]}"
+                    )
+    except Exception as e:
+        logger.error(f"phone_to_gemini error ({state.call_id}): {e}")
+
+
+async def _gemini_reader(
+    state: CallState,
+    bridge_secret: str,
+):
+    """Persistent Gemini→Phone reader. Runs for the entire call lifetime.
+
+    Reads from state.gemini_session.receive() in a single continuous loop.
+    Sends audio to state.current_telnyx_ws — if WS is None or send fails
+    (during reconnect gap), the audio chunk is skipped.
+    """
+    media_handler = TelnyxMediaHandler()
+    pkt_count = 0
+    try:
+        async for response in state.gemini_session.receive():
+            if pkt_count < 3:
+                logger.info(
+                    f"Gemini response ({state.call_id}): "
+                    f"data={len(response.data) if response.data else 0}B, "
+                    f"server_content={response.server_content is not None}, "
+                    f"text={response.text if hasattr(response, 'text') and response.text else None}"
+                )
+
+            # Check max duration
+            if (
+                state.connected_time
+                and time.time() - state.connected_time > MAX_CALL_DURATION
+            ):
+                logger.info(
+                    f"Max duration reached for call {state.call_id}"
+                )
+                break
+
+            # Audio data from Gemini
+            if response.data:
+                pkt_count += 1
+                target_rate = state.stream_sample_rate
+                audio_resampled = resample_audio(response.data, 24000, target_rate)
+                audio_l16 = pcm_le_to_l16(audio_resampled)
+                # Dynamic chunk size: 20ms at target_rate (samples * 2 bytes)
+                chunk_bytes = int(target_rate * 0.02) * 2
+                chunks = chunk_audio(audio_l16, chunk_size=chunk_bytes)
+
+                # Send to whichever WS is currently active
+                ws = state.current_telnyx_ws
+                if ws is not None:
+                    try:
+                        for ch in chunks:
+                            message = media_handler.format_audio_message(ch)
+                            await ws.send_text(message)
+                    except Exception as e:
+                        logger.warning(
+                            f"Gemini→Phone: send failed (WS likely closed), "
+                            f"skipping pkt {pkt_count} ({state.call_id}): {e}"
+                        )
+                else:
+                    if pkt_count % 50 == 1:
+                        logger.warning(
+                            f"Gemini→Phone: no active WS, skipping pkt {pkt_count} ({state.call_id})"
+                        )
+
+                if pkt_count <= 3 or pkt_count % 100 == 0:
+                    logger.info(
+                        f"Gemini→Phone: pkt {pkt_count}, {len(response.data)} bytes, "
+                        f"{len(chunks)} chunks ({state.call_id})"
+                    )
+
+            # Transcriptions
+            if response.server_content:
+                sc = response.server_content
+
+                if (
+                    hasattr(sc, "output_transcription")
+                    and sc.output_transcription
+                    and sc.output_transcription.text
+                ):
+                    entry = {
+                        "speaker": "agent",
+                        "text": sc.output_transcription.text,
+                        "timestamp": datetime.now(timezone.utc).isoformat(),
+                    }
+                    state.transcript.append(entry)
+                    await send_callback(
+                        state.callback_url,
+                        "transcript_update",
+                        state.call_id,
+                        bridge_secret,
+                        transcript_entry=entry,
+                    )
+
+                if (
+                    hasattr(sc, "input_transcription")
+                    and sc.input_transcription
+                    and sc.input_transcription.text
+                ):
+                    entry = {
+                        "speaker": "callee",
+                        "text": sc.input_transcription.text,
+                        "timestamp": datetime.now(timezone.utc).isoformat(),
+                    }
+                    state.transcript.append(entry)
+                    await send_callback(
+                        state.callback_url,
+                        "transcript_update",
+                        state.call_id,
+                        bridge_secret,
+                        transcript_entry=entry,
+                    )
+    except asyncio.CancelledError:
+        logger.info(f"Gemini reader cancelled for call {state.call_id} (pkt_count={pkt_count})")
+        raise
+    except Exception as e:
+        logger.error(f"gemini_reader error ({state.call_id}): {e}")
+
+
 async def handle_telnyx_websocket(
     websocket: WebSocket,
     call_id: str,
@@ -234,8 +428,8 @@ async def handle_telnyx_websocket(
     Handle a Telnyx media WebSocket connection.
 
     Telnyx may cycle the WebSocket connection multiple times during a call.
-    The Gemini Live session is persisted on CallState so it survives WS
-    reconnections — only the first WS connection creates the session.
+    The Gemini Live session and its reader task persist across WS reconnects.
+    Only phone_to_gemini restarts per WS (it needs the new WS handle).
     """
     state = active_calls.get(call_id)
     if not state:
@@ -259,7 +453,7 @@ async def handle_telnyx_websocket(
     first_connection = state.gemini_session is None
 
     if first_connection:
-        # First WS connection: create Gemini session and send initial prompt
+        # First WS connection: create Gemini session and start persistent reader
         state.status = "connected"
         state.connected_time = time.time()
 
@@ -295,205 +489,32 @@ async def handle_telnyx_websocket(
             logger.info(f"Sent initial prompt to Gemini for call {call_id}")
         except Exception as e:
             logger.error(f"Gemini session creation error for call {call_id}: {e}")
-            # Clean up partial state
             state.gemini_session = None
             state._gemini_ctx = None
             return
+
+        # Start persistent Gemini reader (runs for the entire call)
+        state._gemini_reader_task = asyncio.create_task(
+            _gemini_reader(state, bridge_secret)
+        )
+        logger.info(f"Started persistent Gemini reader for call {call_id}")
     else:
-        # WS reconnection: reuse existing Gemini session
-        logger.info(f"WS reconnect for {call_id}, reusing existing Gemini session")
+        # WS reconnection: reuse existing Gemini session + reader
+        logger.info(f"WS reconnect for {call_id}, reusing existing Gemini session + reader")
 
+    # Set this WS as the active output target for the Gemini reader
+    state.current_telnyx_ws = websocket
+
+    # Run phone_to_gemini for this WS connection (blocks until WS closes)
     try:
-        await _bridge_audio(websocket, state.gemini_session, state, bridge_secret)
+        await _phone_to_gemini(websocket, state)
     except Exception as e:
-        logger.error(f"Bridge error for call {call_id}: {e}")
+        logger.error(f"phone_to_gemini error for call {call_id}: {e}")
+
+    # Clear the WS ref if it's still pointing to this connection
+    if state.current_telnyx_ws is websocket:
+        state.current_telnyx_ws = None
     # NOTE: No _complete_call here. The hangup webhook handles call completion.
-
-
-async def _bridge_audio(
-    telnyx_ws: WebSocket,
-    gemini_session,
-    state: CallState,
-    bridge_secret: str,
-):
-    """Bridge audio between Telnyx WebSocket and Gemini Live API session."""
-    media_handler = TelnyxMediaHandler()
-
-    # Shared between coroutines so gemini_to_phone can use detected sample rate
-    stream_info = {"sample_rate": 16000, "codec": "L16"}
-
-    async def phone_to_gemini():
-        """Forward phone audio to Gemini with codec detection and diagnostics."""
-        pkt_count = 0
-        try:
-            while True:
-                raw = await telnyx_ws.receive_text()
-                message = media_handler.parse_message(raw)
-
-                if pkt_count < 3:
-                    logger.info(
-                        f"Telnyx msg #{pkt_count} ({state.call_id}): {raw[:500]}"
-                    )
-
-                # Parse start event for actual codec/format info
-                fmt = media_handler.extract_media_format(message)
-                if fmt:
-                    stream_info["codec"] = fmt.get("encoding", stream_info["codec"])
-                    stream_info["sample_rate"] = fmt.get("sample_rate", stream_info["sample_rate"])
-                    logger.info(
-                        f"Telnyx stream format: encoding={stream_info['codec']} "
-                        f"sample_rate={stream_info['sample_rate']} ({state.call_id})"
-                    )
-                    continue
-
-                if media_handler.is_stop_event(message):
-                    logger.info(f"Phone hangup for call {state.call_id}")
-                    break
-
-                audio = media_handler.extract_audio(message)
-                if audio:
-                    pkt_count += 1
-
-                    # Convert to PCM LE 16kHz based on detected codec
-                    if stream_info["codec"] == "PCMU":
-                        pcm = ulaw_to_pcm(audio)
-                        if stream_info["sample_rate"] != 16000:
-                            pcm = resample_audio(pcm, stream_info["sample_rate"], 16000)
-                    else:
-                        # L16 — passthrough (already little-endian in practice)
-                        pcm = l16_to_pcm_le(audio)
-                        if stream_info["sample_rate"] != 16000:
-                            pcm = resample_audio(pcm, stream_info["sample_rate"], 16000)
-
-                    # Audio amplitude diagnostics every 50 packets
-                    if pkt_count % 50 == 1:
-                        samples = np.frombuffer(pcm, dtype=np.int16)
-                        if len(samples) > 0:
-                            rms = int(np.sqrt(np.mean(samples.astype(np.float64) ** 2)))
-                            logger.info(
-                                f"Phone audio stats pkt#{pkt_count} ({state.call_id}): "
-                                f"min={samples.min()} max={samples.max()} rms={rms} "
-                                f"bytes={len(pcm)} codec={stream_info['codec']}"
-                            )
-
-                    await gemini_session.send_realtime_input(
-                        audio=types.Blob(
-                            data=pcm, mime_type="audio/pcm;rate=16000"
-                        )
-                    )
-                    if pkt_count % 100 == 0:
-                        logger.info(
-                            f"Phone→Gemini: {pkt_count} packets ({state.call_id})"
-                        )
-                elif message.get("event") == "media":
-                    if pkt_count == 0:
-                        logger.warning(
-                            f"Media event but no audio extracted ({state.call_id}): {raw[:300]}"
-                        )
-        except Exception as e:
-            logger.error(f"phone_to_gemini error ({state.call_id}): {e}")
-
-    async def gemini_to_phone():
-        """Forward Gemini audio to phone. PCM 24kHz LE → resample 16kHz → L16 BE."""
-        pkt_count = 0
-        try:
-            async for response in gemini_session.receive():
-                if pkt_count < 3:
-                    logger.info(
-                        f"Gemini response ({state.call_id}): "
-                        f"data={len(response.data) if response.data else 0}B, "
-                        f"server_content={response.server_content is not None}, "
-                        f"text={response.text if hasattr(response, 'text') and response.text else None}"
-                    )
-
-                # Check max duration
-                if (
-                    state.connected_time
-                    and time.time() - state.connected_time > MAX_CALL_DURATION
-                ):
-                    logger.info(
-                        f"Max duration reached for call {state.call_id}"
-                    )
-                    break
-
-                # Audio data from Gemini
-                if response.data:
-                    pkt_count += 1
-                    target_rate = stream_info["sample_rate"]
-                    audio_resampled = resample_audio(response.data, 24000, target_rate)
-                    audio_l16 = pcm_le_to_l16(audio_resampled)
-                    # Dynamic chunk size: 20ms at target_rate (samples * 2 bytes)
-                    chunk_bytes = int(target_rate * 0.02) * 2
-                    chunks = chunk_audio(audio_l16, chunk_size=chunk_bytes)
-                    for ch in chunks:
-                        message = media_handler.format_audio_message(ch)
-                        await telnyx_ws.send_text(message)
-                    if pkt_count <= 3 or pkt_count % 100 == 0:
-                        logger.info(
-                            f"Gemini→Phone: pkt {pkt_count}, {len(response.data)} bytes, "
-                            f"{len(chunks)} chunks ({state.call_id})"
-                        )
-
-                # Transcriptions
-                if response.server_content:
-                    sc = response.server_content
-
-                    if (
-                        hasattr(sc, "output_transcription")
-                        and sc.output_transcription
-                        and sc.output_transcription.text
-                    ):
-                        entry = {
-                            "speaker": "agent",
-                            "text": sc.output_transcription.text,
-                            "timestamp": datetime.now(timezone.utc).isoformat(),
-                        }
-                        state.transcript.append(entry)
-                        await send_callback(
-                            state.callback_url,
-                            "transcript_update",
-                            state.call_id,
-                            bridge_secret,
-                            transcript_entry=entry,
-                        )
-
-                    if (
-                        hasattr(sc, "input_transcription")
-                        and sc.input_transcription
-                        and sc.input_transcription.text
-                    ):
-                        entry = {
-                            "speaker": "callee",
-                            "text": sc.input_transcription.text,
-                            "timestamp": datetime.now(timezone.utc).isoformat(),
-                        }
-                        state.transcript.append(entry)
-                        await send_callback(
-                            state.callback_url,
-                            "transcript_update",
-                            state.call_id,
-                            bridge_secret,
-                            transcript_entry=entry,
-                        )
-        except Exception as e:
-            logger.error(f"gemini_to_phone error ({state.call_id}): {e}")
-
-    # Run both directions concurrently
-    done, pending = await asyncio.wait(
-        [
-            asyncio.create_task(phone_to_gemini()),
-            asyncio.create_task(gemini_to_phone()),
-        ],
-        return_when=asyncio.FIRST_COMPLETED,
-    )
-
-    # Cancel the remaining task
-    for task in pending:
-        task.cancel()
-        try:
-            await task
-        except asyncio.CancelledError:
-            pass
 
 
 async def _complete_call(
@@ -506,6 +527,15 @@ async def _complete_call(
 
     if state.status == "completed" or state.status == "failed":
         return
+
+    # Cancel the persistent Gemini reader task
+    if state._gemini_reader_task:
+        state._gemini_reader_task.cancel()
+        try:
+            await state._gemini_reader_task
+        except asyncio.CancelledError:
+            pass
+        state._gemini_reader_task = None
 
     # Clean up persistent Gemini session
     if state._gemini_ctx:
