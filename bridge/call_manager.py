@@ -8,7 +8,7 @@ import httpx
 from google.genai import types
 from fastapi import WebSocket
 
-from audio_utils import l16_to_pcm_le, pcm_le_to_l16, resample_audio
+from audio_utils import l16_to_pcm_le, pcm_le_to_l16, resample_audio, chunk_audio
 from gemini_bridge import (
     build_system_prompt,
     create_gemini_config,
@@ -359,11 +359,14 @@ async def _bridge_audio(
                     pkt_count += 1
                     audio_16k = resample_audio(response.data, 24000, 16000)
                     audio_l16 = pcm_le_to_l16(audio_16k)
-                    message = media_handler.format_audio_message(audio_l16)
-                    await telnyx_ws.send_text(message)
+                    chunks = chunk_audio(audio_l16)
+                    for ch in chunks:
+                        message = media_handler.format_audio_message(ch)
+                        await telnyx_ws.send_text(message)
                     if pkt_count <= 3 or pkt_count % 100 == 0:
                         logger.info(
-                            f"Gemini→Phone: pkt {pkt_count}, {len(response.data)} bytes ({state.call_id})"
+                            f"Gemini→Phone: pkt {pkt_count}, {len(response.data)} bytes, "
+                            f"{len(chunks)} chunks ({state.call_id})"
                         )
 
                 # Transcriptions
