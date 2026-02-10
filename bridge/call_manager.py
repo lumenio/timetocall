@@ -3,6 +3,7 @@ import logging
 import time
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
+from typing import Any
 
 import numpy as np
 import httpx
@@ -40,6 +41,8 @@ class CallState:
     start_time: float = 0.0
     connected_time: float = 0.0
     answer_event: asyncio.Event = field(default_factory=asyncio.Event)
+    gemini_session: Any = None       # Gemini Live session (persists across WS reconnects)
+    _gemini_ctx: Any = None          # Context manager ref for cleanup
 
 
 # In-memory registry of active calls
@@ -230,14 +233,9 @@ async def handle_telnyx_websocket(
     """
     Handle a Telnyx media WebSocket connection.
 
-    Telnyx may open TWO WebSocket connections per call:
-    1. Early media WS — before call.answered (ringing/comfort noise)
-    2. Active media WS — after call.answered (actual call audio)
-
-    This handler waits for the answer event before starting Gemini.
-    If the WS closes before the call is answered (early media WS
-    being replaced), it returns cleanly without cleanup so the
-    second WS can take over.
+    Telnyx may cycle the WebSocket connection multiple times during a call.
+    The Gemini Live session is persisted on CallState so it survives WS
+    reconnections — only the first WS connection creates the session.
     """
     state = active_calls.get(call_id)
     if not state:
@@ -246,12 +244,11 @@ async def handle_telnyx_websocket(
         return
 
     logger.info(
-        f"WS handler for {call_id}, answered={state.answer_event.is_set()}"
+        f"WS handler for {call_id}, answered={state.answer_event.is_set()}, "
+        f"has_gemini={state.gemini_session is not None}"
     )
 
-    # Streaming is started via start_streaming() after call.answered,
-    # so the WS should only connect after answer. Safety net: if the
-    # answer event isn't set yet, wait briefly.
+    # Wait for answer event if not yet set
     if not state.answer_event.is_set():
         logger.info(f"WS connected before answer event set for {call_id}, waiting...")
         try:
@@ -259,34 +256,36 @@ async def handle_telnyx_websocket(
         except asyncio.TimeoutError:
             logger.warning(f"Answer event timeout on WS for {call_id}, proceeding anyway")
 
-    # Call is answered. Start Gemini bridge on this WebSocket.
-    state.status = "connected"
-    state.connected_time = time.time()
+    first_connection = state.gemini_session is None
 
-    await send_callback(
-        state.callback_url,
-        "status_update",
-        call_id,
-        bridge_secret,
-        status="connected",
-    )
+    if first_connection:
+        # First WS connection: create Gemini session and send initial prompt
+        state.status = "connected"
+        state.connected_time = time.time()
 
-    # Build Gemini session
-    system_prompt = build_system_prompt(
-        state.briefing, state.user_name, state.language
-    )
-    config = create_gemini_config(system_prompt)
-    client = create_gemini_client()
+        await send_callback(
+            state.callback_url,
+            "status_update",
+            call_id,
+            bridge_secret,
+            status="connected",
+        )
 
-    try:
-        async with client.aio.live.connect(
-            model=MODEL, config=config
-        ) as session:
+        # Build persistent Gemini session (NOT using `async with` so it survives WS reconnects)
+        system_prompt = build_system_prompt(
+            state.briefing, state.user_name, state.language
+        )
+        config = create_gemini_config(system_prompt)
+        client = create_gemini_client()
+
+        try:
+            ctx = client.aio.live.connect(model=MODEL, config=config)
+            state.gemini_session = await ctx.__aenter__()
+            state._gemini_ctx = ctx
             logger.info(f"Gemini Live session connected for call {call_id}")
 
-            # Trigger Gemini to start the conversation — without this,
-            # both sides sit in silence waiting for the other to speak.
-            await session.send_client_content(
+            # Trigger Gemini to start the conversation
+            await state.gemini_session.send_client_content(
                 turns=types.Content(
                     role="user",
                     parts=[types.Part(text="The phone call is now connected. The other person has answered. Begin the conversation now.")],
@@ -294,10 +293,20 @@ async def handle_telnyx_websocket(
                 turn_complete=True,
             )
             logger.info(f"Sent initial prompt to Gemini for call {call_id}")
+        except Exception as e:
+            logger.error(f"Gemini session creation error for call {call_id}: {e}")
+            # Clean up partial state
+            state.gemini_session = None
+            state._gemini_ctx = None
+            return
+    else:
+        # WS reconnection: reuse existing Gemini session
+        logger.info(f"WS reconnect for {call_id}, reusing existing Gemini session")
 
-            await _bridge_audio(websocket, session, state, bridge_secret)
+    try:
+        await _bridge_audio(websocket, state.gemini_session, state, bridge_secret)
     except Exception as e:
-        logger.error(f"Gemini session error for call {call_id}: {e}")
+        logger.error(f"Bridge error for call {call_id}: {e}")
     # NOTE: No _complete_call here. The hangup webhook handles call completion.
 
 
@@ -497,6 +506,16 @@ async def _complete_call(
 
     if state.status == "completed" or state.status == "failed":
         return
+
+    # Clean up persistent Gemini session
+    if state._gemini_ctx:
+        try:
+            await state._gemini_ctx.__aexit__(None, None, None)
+            logger.info(f"Gemini session closed for call {call_id}")
+        except Exception as e:
+            logger.warning(f"Gemini session cleanup error for {call_id}: {e}")
+        state.gemini_session = None
+        state._gemini_ctx = None
 
     duration = 0
     if state.connected_time:
