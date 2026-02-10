@@ -49,9 +49,9 @@ export async function POST(request: Request) {
     .eq("user_id", user.id)
     .gte("created_at", oneHourAgo);
 
-  if ((count ?? 0) >= 5) {
+  if ((count ?? 0) >= 50) {
     return NextResponse.json(
-      { error: "Rate limit exceeded. Max 5 calls per hour." },
+      { error: "Rate limit exceeded. Max 50 calls per hour." },
       { status: 429 }
     );
   }
