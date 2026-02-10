@@ -181,6 +181,7 @@ async def handle_telnyx_websocket(
         async with client.aio.live.connect(
             model=MODEL, config=config
         ) as session:
+            logger.info(f"Gemini Live session connected for call {call_id}")
             await _bridge_audio(websocket, session, state, bridge_secret)
     except Exception as e:
         logger.error(f"Gemini session error for call {call_id}: {e}")
@@ -199,10 +200,16 @@ async def _bridge_audio(
 
     async def phone_to_gemini():
         """Forward phone audio to Gemini. L16 BE → PCM LE (byte swap only)."""
+        pkt_count = 0
         try:
             while True:
                 raw = await telnyx_ws.receive_text()
                 message = media_handler.parse_message(raw)
+
+                if pkt_count < 3:
+                    logger.info(
+                        f"Telnyx msg #{pkt_count} ({state.call_id}): {raw[:500]}"
+                    )
 
                 if media_handler.is_stop_event(message):
                     logger.info(f"Phone hangup for call {state.call_id}")
@@ -210,17 +217,28 @@ async def _bridge_audio(
 
                 audio = media_handler.extract_audio(message)
                 if audio:
+                    pkt_count += 1
                     pcm = l16_to_pcm_le(audio)
                     await gemini_session.send_realtime_input(
                         audio=types.Blob(
                             data=pcm, mime_type="audio/pcm;rate=16000"
                         )
                     )
+                    if pkt_count % 100 == 0:
+                        logger.info(
+                            f"Phone→Gemini: {pkt_count} packets ({state.call_id})"
+                        )
+                elif message.get("event") == "media":
+                    if pkt_count == 0:
+                        logger.warning(
+                            f"Media event but no audio extracted ({state.call_id}): {raw[:300]}"
+                        )
         except Exception as e:
             logger.error(f"phone_to_gemini error ({state.call_id}): {e}")
 
     async def gemini_to_phone():
         """Forward Gemini audio to phone. PCM 24kHz LE → resample 16kHz → L16 BE."""
+        pkt_count = 0
         try:
             async for response in gemini_session.receive():
                 # Check max duration
@@ -235,10 +253,15 @@ async def _bridge_audio(
 
                 # Audio data from Gemini
                 if response.data:
+                    pkt_count += 1
                     audio_16k = resample_audio(response.data, 24000, 16000)
                     audio_l16 = pcm_le_to_l16(audio_16k)
                     message = media_handler.format_audio_message(audio_l16)
                     await telnyx_ws.send_text(message)
+                    if pkt_count <= 3 or pkt_count % 100 == 0:
+                        logger.info(
+                            f"Gemini→Phone: pkt {pkt_count}, {len(response.data)} bytes ({state.call_id})"
+                        )
 
                 # Transcriptions
                 if response.server_content:
