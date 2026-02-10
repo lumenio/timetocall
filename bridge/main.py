@@ -116,5 +116,24 @@ async def telnyx_media_stream(websocket: WebSocket, call_id: str = ""):
 async def telnyx_webhook(request: Request):
     """Handle Telnyx call status webhooks."""
     body = await request.json()
-    logger.info(f"Telnyx webhook: {body}")
+    event_type = body.get("data", {}).get("event_type", "")
+    payload = body.get("data", {}).get("payload", {})
+    call_control_id = payload.get("call_control_id", "")
+
+    logger.info(f"Telnyx webhook: {event_type} for {call_control_id}")
+
+    if event_type == "call.answered":
+        state = call_manager.find_call_by_telnyx_id(call_control_id)
+        if state:
+            await call_manager.handle_call_answered(state.call_id)
+        else:
+            logger.warning(f"call.answered for unknown call_control_id: {call_control_id}")
+
+    elif event_type == "call.hangup":
+        state = call_manager.find_call_by_telnyx_id(call_control_id)
+        if state:
+            await call_manager.handle_call_hangup(state.call_id, BRIDGE_SECRET)
+        else:
+            logger.warning(f"call.hangup for unknown call_control_id: {call_control_id}")
+
     return {"status": "ok"}

@@ -37,6 +37,7 @@ class CallState:
     transcript: list[dict] = field(default_factory=list)
     start_time: float = 0.0
     connected_time: float = 0.0
+    answer_event: asyncio.Event = field(default_factory=asyncio.Event)
 
 
 # In-memory registry of active calls
@@ -120,6 +121,8 @@ async def start_call(
 
         # Start no-answer timeout
         asyncio.create_task(_no_answer_timeout(call_id, bridge_secret))
+        # Safety net: force-complete if hangup webhook never arrives
+        asyncio.create_task(_max_duration_timeout(call_id, bridge_secret))
 
         return call_control_id
     except Exception as e:
@@ -133,6 +136,66 @@ async def start_call(
             status="failed",
         )
         raise
+
+
+def find_call_by_telnyx_id(call_control_id: str) -> CallState | None:
+    """Look up a CallState by its Telnyx call_control_id."""
+    for state in active_calls.values():
+        if state.telnyx_call_control_id == call_control_id:
+            return state
+    return None
+
+
+async def handle_call_answered(call_id: str):
+    """Called when Telnyx call.answered webhook arrives."""
+    state = active_calls.get(call_id)
+    if state:
+        state.answer_event.set()
+        logger.info(f"Call answered: {call_id}")
+
+
+async def handle_call_hangup(call_id: str, bridge_secret: str):
+    """Called when Telnyx call.hangup webhook arrives."""
+    logger.info(f"Call hangup webhook: {call_id}")
+    await _complete_call(call_id, bridge_secret)
+
+
+async def _max_duration_timeout(call_id: str, bridge_secret: str):
+    """Safety net: force-complete the call if hangup webhook is never received."""
+    await asyncio.sleep(MAX_CALL_DURATION + 30)
+    state = active_calls.get(call_id)
+    if state and state.status not in ("completed", "failed"):
+        logger.warning(f"Max duration safety timeout for {call_id}")
+        await _complete_call(call_id, bridge_secret)
+
+
+async def _wait_for_answer_or_ws_close(websocket: WebSocket, state: CallState) -> bool:
+    """Wait for the call to be answered or the WebSocket to close.
+
+    Returns True if the call was answered, False if the WS closed first.
+    """
+    async def drain_ws():
+        try:
+            while True:
+                await websocket.receive_text()
+        except Exception:
+            pass
+
+    drain_task = asyncio.create_task(drain_ws())
+    answer_task = asyncio.create_task(state.answer_event.wait())
+
+    done, pending = await asyncio.wait(
+        [drain_task, answer_task],
+        return_when=asyncio.FIRST_COMPLETED,
+    )
+    for t in pending:
+        t.cancel()
+        try:
+            await t
+        except asyncio.CancelledError:
+            pass
+
+    return answer_task in done
 
 
 async def _no_answer_timeout(call_id: str, bridge_secret: str):
@@ -150,8 +213,16 @@ async def handle_telnyx_websocket(
     bridge_secret: str,
 ):
     """
-    Handle the Telnyx media WebSocket connection.
-    Opens Gemini session and bridges audio bidirectionally.
+    Handle a Telnyx media WebSocket connection.
+
+    Telnyx may open TWO WebSocket connections per call:
+    1. Early media WS — before call.answered (ringing/comfort noise)
+    2. Active media WS — after call.answered (actual call audio)
+
+    This handler waits for the answer event before starting Gemini.
+    If the WS closes before the call is answered (early media WS
+    being replaced), it returns cleanly without cleanup so the
+    second WS can take over.
     """
     state = active_calls.get(call_id)
     if not state:
@@ -159,6 +230,19 @@ async def handle_telnyx_websocket(
         await websocket.close()
         return
 
+    logger.info(
+        f"WS handler for {call_id}, answered={state.answer_event.is_set()}"
+    )
+
+    # If call not yet answered, this is the early media WebSocket.
+    # Wait for either: answer event, or WS close.
+    if not state.answer_event.is_set():
+        answered = await _wait_for_answer_or_ws_close(websocket, state)
+        if not answered:
+            logger.info(f"Early media WS closed before answer for {call_id}")
+            return  # No cleanup — second WS will handle the call
+
+    # Call is answered. Start Gemini bridge on this WebSocket.
     state.status = "connected"
     state.connected_time = time.time()
 
@@ -197,8 +281,7 @@ async def handle_telnyx_websocket(
             await _bridge_audio(websocket, session, state, bridge_secret)
     except Exception as e:
         logger.error(f"Gemini session error for call {call_id}: {e}")
-    finally:
-        await _complete_call(call_id, bridge_secret)
+    # NOTE: No _complete_call here. The hangup webhook handles call completion.
 
 
 async def _bridge_audio(
