@@ -4,7 +4,6 @@ from dotenv import load_dotenv
 from fastapi import FastAPI, WebSocket, Request, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
-from telnyx_handler import init_telnyx
 import call_manager
 
 load_dotenv()
@@ -36,7 +35,6 @@ def verify_auth(request: Request):
 
 @app.on_event("startup")
 async def startup():
-    init_telnyx()
     logger.info("Audio bridge server started")
 
 

@@ -16,7 +16,7 @@ from gemini_bridge import (
     generate_summary,
     MODEL,
 )
-from telnyx_handler import TelnyxMediaHandler, initiate_call
+from telnyx_handler import TelnyxMediaHandler, initiate_call, hangup_call
 
 logger = logging.getLogger(__name__)
 
@@ -103,7 +103,7 @@ async def start_call(
     webhook_url = f"https://{bridge_public_url}/telnyx/webhook"
 
     try:
-        call_control_id = initiate_call(phone_number, stream_url, webhook_url)
+        call_control_id = await initiate_call(phone_number, stream_url, webhook_url)
         state.telnyx_call_control_id = call_control_id
         state.status = "dialing"
 
@@ -346,9 +346,7 @@ async def end_call(call_id: str, bridge_secret: str):
     # Try to hang up via Telnyx
     if state.telnyx_call_control_id:
         try:
-            import telnyx
-
-            telnyx.Call.retrieve(state.telnyx_call_control_id).hangup()
+            await hangup_call(state.telnyx_call_control_id)
         except Exception as e:
             logger.error(f"Telnyx hangup failed for {call_id}: {e}")
 
