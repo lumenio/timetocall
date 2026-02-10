@@ -1,0 +1,3 @@
+[build]
+dockerfilePath = "bridge/Dockerfile"
+watchPatterns = ["bridge/**"]
