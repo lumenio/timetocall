@@ -182,6 +182,18 @@ async def handle_telnyx_websocket(
             model=MODEL, config=config
         ) as session:
             logger.info(f"Gemini Live session connected for call {call_id}")
+
+            # Trigger Gemini to start the conversation — without this,
+            # both sides sit in silence waiting for the other to speak.
+            await session.send_client_content(
+                turns=types.Content(
+                    role="user",
+                    parts=[types.Part(text="The phone call is now connected. The other person has answered. Begin the conversation now.")],
+                ),
+                turn_complete=True,
+            )
+            logger.info(f"Sent initial prompt to Gemini for call {call_id}")
+
             await _bridge_audio(websocket, session, state, bridge_secret)
     except Exception as e:
         logger.error(f"Gemini session error for call {call_id}: {e}")
@@ -241,6 +253,14 @@ async def _bridge_audio(
         pkt_count = 0
         try:
             async for response in gemini_session.receive():
+                if pkt_count < 3:
+                    logger.info(
+                        f"Gemini response ({state.call_id}): "
+                        f"data={len(response.data) if response.data else 0}B, "
+                        f"server_content={response.server_content is not None}, "
+                        f"text={response.text if hasattr(response, 'text') and response.text else None}"
+                    )
+
                 # Check max duration
                 if (
                     state.connected_time
