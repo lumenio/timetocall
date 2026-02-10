@@ -34,7 +34,7 @@ async def initiate_call(
                 "from": os.environ["TELNYX_PHONE_NUMBER"],
                 "webhook_url": webhook_url,
                 "stream_url": stream_url,
-                "stream_track": "inbound_track",
+                "stream_track": "outbound_track",
                 "stream_bidirectional_mode": "rtp",
                 "stream_bidirectional_codec": "L16",
                 "stream_bidirectional_sampling_rate": 16000,
