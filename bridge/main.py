@@ -35,6 +35,15 @@ def verify_auth(request: Request):
 
 @app.on_event("startup")
 async def startup():
+    # Log masked env vars for debugging config issues
+    conn_id = os.environ.get("TELNYX_CONNECTION_ID", "")
+    phone = os.environ.get("TELNYX_PHONE_NUMBER", "")
+    api_key = os.environ.get("TELNYX_API_KEY", "")
+    logger.info(
+        f"Telnyx config: connection_id={conn_id[:8]}... "
+        f"phone={phone} "
+        f"api_key={'set' if api_key else 'MISSING'}"
+    )
     logger.info("Audio bridge server started")
 
 

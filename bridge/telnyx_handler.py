@@ -39,6 +39,8 @@ async def initiate_call(
                 "stream_bidirectional_codec": "L16",
             },
         )
+        if resp.status_code >= 400:
+            logger.error(f"Telnyx API error {resp.status_code}: {resp.text}")
         resp.raise_for_status()
         data = resp.json()["data"]
         call_control_id = data["call_control_id"]
