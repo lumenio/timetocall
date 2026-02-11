@@ -32,6 +32,9 @@ export function Navbar() {
           ) : user ? (
             <>
               <CreditBadge />
+              <Button variant="ghost" size="sm" asChild>
+                <Link href="/history">History</Link>
+              </Button>
               <Button variant="ghost" size="sm" onClick={handleSignOut}>
                 Sign Out
               </Button>
