@@ -54,7 +54,7 @@ export default function HomePage() {
       {/* Hero */}
       <section className="pt-32 pb-20 px-4">
         <div className="mx-auto max-w-3xl text-center">
-          <h1 className="text-5xl sm:text-6xl font-bold tracking-tight leading-tight">
+          <h1 className="font-serif text-5xl sm:text-6xl font-medium tracking-tight leading-tight">
             Hate making
             <br />
             phone calls?
