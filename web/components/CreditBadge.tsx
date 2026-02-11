@@ -1,6 +1,6 @@
 "use client";
 
-import { Coins } from "lucide-react";
+import { CircleDot } from "lucide-react";
 import { useUser } from "@/lib/hooks/useUser";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -16,7 +16,7 @@ export function CreditBadge() {
 
   return (
     <Badge variant="secondary" className="gap-1.5 px-3 py-1 text-sm">
-      <Coins className="size-3.5 text-warning" />
+      <CircleDot className="size-3.5" />
       {credits} {credits === 1 ? "credit" : "credits"}
     </Badge>
   );
