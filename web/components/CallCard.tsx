@@ -65,7 +65,7 @@ export function CallCard({
 
   return (
     <Link href={`/call/${id}`}>
-      <Card className="gap-2 py-4 transition-colors hover:bg-accent/50">
+      <Card className="gap-4 py-4 transition-colors hover:bg-accent/50">
         <CardHeader>
           <CardTitle className="font-mono text-sm">{phone_number}</CardTitle>
           <CardDescription className="truncate">
