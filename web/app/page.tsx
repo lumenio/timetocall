@@ -54,10 +54,8 @@ export default function HomePage() {
       {/* Hero */}
       <section className="pt-32 pb-20 px-4">
         <div className="mx-auto max-w-3xl text-center">
-          <h1 className="font-serif text-5xl sm:text-6xl font-normal tracking-[-0.02em] leading-tight">
-            Hate making
-            <br />
-            phone calls?
+          <h1 className="font-serif text-5xl sm:text-6xl font-semibold tracking-[-0.02em] leading-tight">
+            Hate making phone calls?
             <br />
             We got you.
           </h1>
@@ -82,7 +80,7 @@ export default function HomePage() {
       <Separator />
       <section className="py-20 px-4">
         <div className="mx-auto max-w-4xl">
-          <h2 className="text-center font-serif text-3xl font-normal mb-14">
+          <h2 className="text-center font-serif text-3xl font-semibold mb-14">
             How it works
           </h2>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
@@ -105,7 +103,7 @@ export default function HomePage() {
       <Separator />
       <section className="py-20 px-4">
         <div className="mx-auto max-w-4xl">
-          <h2 className="text-center font-serif text-3xl font-normal mb-14">
+          <h2 className="text-center font-serif text-3xl font-semibold mb-14">
             Perfect for...
           </h2>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
@@ -127,7 +125,7 @@ export default function HomePage() {
       <Separator />
       <section className="py-20 px-4">
         <div className="mx-auto max-w-md text-center">
-          <h2 className="font-serif text-3xl font-normal mb-4">
+          <h2 className="font-serif text-3xl font-semibold mb-4">
             Ready to stop dialing?
           </h2>
           <p className="text-muted-foreground mb-8">
