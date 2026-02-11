@@ -54,26 +54,25 @@ export default function HomePage() {
       {/* Hero */}
       <section className="pt-32 pb-20 px-4">
         <div className="mx-auto max-w-3xl text-center">
-          <h1 className="font-serif text-5xl sm:text-6xl font-medium tracking-tight leading-tight">
+          <h1 className="font-serif text-5xl sm:text-6xl font-normal tracking-[-0.02em] leading-tight">
             Hate making
             <br />
             phone calls?
             <br />
-            <span className="text-primary">We got you.</span>
+            We got you.
           </h1>
-          <p className="mt-6 text-lg sm:text-xl text-muted-foreground max-w-xl mx-auto leading-relaxed">
-            Any question. Any language. Just brief the agent, add a phone
-            number, and get that long-awaited call done.
+          <p className="mt-8 font-mono text-xs uppercase tracking-[0.15em] text-muted-foreground">
+            Any question. Any language. Just brief the agent and go.
           </p>
           <div className="mt-10">
-            <Button asChild size="lg" className="rounded-xl px-8 py-6 text-lg font-semibold">
+            <Button asChild size="lg" className="rounded-full px-8 py-6 font-mono text-xs uppercase tracking-[0.1em]">
               <Link href="/call">
                 Make a Call
                 <ArrowRight />
               </Link>
             </Button>
           </div>
-          <p className="mt-4 text-sm text-muted-foreground">
+          <p className="mt-4 font-mono text-xs text-muted-foreground">
             3 free calls to start. No credit card needed.
           </p>
         </div>
@@ -83,7 +82,7 @@ export default function HomePage() {
       <Separator />
       <section className="py-20 px-4">
         <div className="mx-auto max-w-4xl">
-          <h2 className="text-center text-3xl font-bold mb-14">
+          <h2 className="text-center font-serif text-3xl font-normal mb-14">
             How it works
           </h2>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
@@ -92,7 +91,7 @@ export default function HomePage() {
                 <div className="mx-auto mb-4 flex size-14 items-center justify-center rounded-full bg-primary/10 text-primary">
                   {step.icon}
                 </div>
-                <h3 className="text-lg font-semibold mb-2">{step.title}</h3>
+                <h3 className="font-serif text-xl mb-2">{step.title}</h3>
                 <p className="text-sm text-muted-foreground leading-relaxed">
                   {step.description}
                 </p>
@@ -106,17 +105,14 @@ export default function HomePage() {
       <Separator />
       <section className="py-20 px-4">
         <div className="mx-auto max-w-4xl">
-          <h2 className="text-center text-3xl font-bold mb-14">
+          <h2 className="text-center font-serif text-3xl font-normal mb-14">
             Perfect for...
           </h2>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
             {USE_CASES.map((uc, i) => (
-              <Card
-                key={i}
-                className="bg-card/50 transition-colors hover:bg-card"
-              >
+              <Card key={i}>
                 <CardContent className="pt-6">
-                  <h3 className="font-semibold mb-2">{uc.title}</h3>
+                  <h3 className="font-serif text-lg mb-2">{uc.title}</h3>
                   <p className="text-sm text-muted-foreground leading-relaxed">
                     {uc.description}
                   </p>
@@ -131,13 +127,13 @@ export default function HomePage() {
       <Separator />
       <section className="py-20 px-4">
         <div className="mx-auto max-w-md text-center">
-          <h2 className="text-2xl font-bold mb-4">
+          <h2 className="font-serif text-3xl font-normal mb-4">
             Ready to stop dialing?
           </h2>
           <p className="text-muted-foreground mb-8">
             Sign up in 10 seconds. Your first 3 calls are free.
           </p>
-          <Button asChild className="rounded-xl px-8">
+          <Button asChild className="rounded-full px-8 font-mono text-xs uppercase tracking-[0.1em]">
             <Link href="/call">Get Started</Link>
           </Button>
         </div>
@@ -146,7 +142,7 @@ export default function HomePage() {
       {/* Footer */}
       <Separator />
       <footer className="py-8 px-4">
-        <div className="mx-auto max-w-5xl flex items-center justify-between text-sm text-muted-foreground">
+        <div className="mx-auto max-w-5xl flex items-center justify-between font-mono text-xs text-muted-foreground">
           <span>TimeToCall</span>
           <span>&copy; {new Date().getFullYear()}</span>
         </div>
