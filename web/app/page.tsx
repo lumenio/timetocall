@@ -60,7 +60,7 @@ export default function HomePage() {
             <em>We got you.</em>
           </h1>
           <p className="mt-8 font-mono text-xs uppercase tracking-[0.15em] text-muted-foreground">
-            Any question. Any language. Just brief the agent and go.
+            Any question. Any language. Just brief the agent and get it done.
           </p>
           <div className="mt-10">
             <Button asChild size="lg" className="rounded-full px-8 py-6 font-mono text-xs uppercase tracking-[0.1em]">
