@@ -7,7 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { AlertCircle, CheckCircle2 } from "lucide-react";
+import { AlertCircle } from "lucide-react";
 
 interface TranscriptEntry {
   speaker: "agent" | "callee";
@@ -166,9 +166,8 @@ export function LiveCallView({ callId }: { callId: string }) {
       {call.status === "completed" && call.summary && (
         <Card>
           <CardHeader>
-            <CardTitle className="flex items-center gap-2 text-sm">
-              <CheckCircle2 className="size-4" />
-              Call Summary
+            <CardTitle className="text-sm text-muted-foreground">
+              Summary
             </CardTitle>
           </CardHeader>
           <CardContent>
