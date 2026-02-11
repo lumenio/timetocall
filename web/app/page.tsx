@@ -89,7 +89,7 @@ export default function HomePage() {
                 <div className="mx-auto mb-4 flex size-14 items-center justify-center rounded-full bg-primary/10 text-primary">
                   {step.icon}
                 </div>
-                <h3 className="font-serif text-xl mb-2">{step.title}</h3>
+                <h3 className="font-serif text-xl font-semibold mb-2">{step.title}</h3>
                 <p className="text-sm text-muted-foreground leading-relaxed">
                   {step.description}
                 </p>
@@ -110,7 +110,7 @@ export default function HomePage() {
             {USE_CASES.map((uc, i) => (
               <Card key={i}>
                 <CardContent className="pt-6">
-                  <h3 className="font-serif text-lg mb-2">{uc.title}</h3>
+                  <h3 className="font-serif text-lg font-semibold mb-2">{uc.title}</h3>
                   <p className="text-sm text-muted-foreground leading-relaxed">
                     {uc.description}
                   </p>
