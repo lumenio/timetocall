@@ -42,7 +42,7 @@ export default function LoginPage() {
     <div className="flex min-h-screen items-center justify-center px-4">
       <div className="w-full max-w-sm space-y-8">
         <div className="text-center">
-          <Link href="/" className="text-2xl font-bold tracking-tight">
+          <Link href="/" className="font-serif text-2xl font-semibold">
             TimeToCall
           </Link>
           <p className="mt-2 text-muted-foreground">Sign in to start making calls</p>
