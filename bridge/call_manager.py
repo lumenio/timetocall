@@ -47,6 +47,9 @@ class CallState:
     _gemini_reader_task: Any = None  # Persistent Gemini→Phone reader task
     stream_sample_rate: int = 16000  # Detected from Telnyx start event
     stream_codec: str = "L16"        # Detected from Telnyx start event
+    _next_audio_send_time: float = 0.0   # Real-time pacing clock for Gemini→Phone audio
+    _agent_text_buffer: str = ""         # Accumulates agent transcription per turn
+    _callee_text_buffer: str = ""        # Accumulates callee transcription per turn
 
 
 # In-memory registry of active calls
@@ -305,6 +308,33 @@ async def _phone_to_gemini(
         logger.error(f"phone_to_gemini error ({state.call_id}): {e}")
 
 
+def _now_iso() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
+def _flush_transcript_buffer(state: CallState, speaker: str, bridge_secret: str):
+    """Flush the accumulated transcription buffer for the given speaker into a single transcript entry."""
+    if speaker == "agent":
+        text = state._agent_text_buffer.strip()
+        state._agent_text_buffer = ""
+    else:
+        text = state._callee_text_buffer.strip()
+        state._callee_text_buffer = ""
+
+    if not text:
+        return
+
+    entry = {"speaker": speaker, "text": text, "timestamp": _now_iso()}
+    state.transcript.append(entry)
+    asyncio.create_task(send_callback(
+        state.callback_url,
+        "transcript_update",
+        state.call_id,
+        bridge_secret,
+        transcript_entry=entry,
+    ))
+
+
 async def _gemini_reader(
     state: CallState,
     bridge_secret: str,
@@ -349,6 +379,7 @@ async def _gemini_reader(
                         logger.info(f"Gemini turn_complete ({state.call_id})")
                     if hasattr(sc, 'interrupted') and sc.interrupted:
                         logger.info(f"Gemini interrupted by user ({state.call_id})")
+                        state._next_audio_send_time = time.perf_counter()  # flush pending pacing
 
                 # Audio data from Gemini
                 if response.data:
@@ -360,13 +391,25 @@ async def _gemini_reader(
                     chunk_bytes = int(target_rate * 0.02) * 2
                     chunks = chunk_audio(audio_l16, chunk_size=chunk_bytes)
 
-                    # Send to whichever WS is currently active
+                    # Pace audio to real-time: each chunk = 20ms of audio
+                    CHUNK_DURATION_S = 0.02
+
                     ws = state.current_telnyx_ws
                     if ws is not None:
                         try:
                             for ch in chunks:
-                                message = media_handler.format_audio_message(ch)
-                                await ws.send_text(message)
+                                if state.current_telnyx_ws is not ws:
+                                    break  # WS changed (reconnect), stop sending on old one
+                                await ws.send_text(media_handler.format_audio_message(ch))
+
+                                # Pace to real-time
+                                state._next_audio_send_time += CHUNK_DURATION_S
+                                sleep_s = state._next_audio_send_time - time.perf_counter()
+                                if sleep_s > 0:
+                                    await asyncio.sleep(sleep_s)
+                                else:
+                                    # Fell behind (e.g. new turn after silence): reset clock
+                                    state._next_audio_send_time = time.perf_counter()
                         except Exception as e:
                             logger.warning(
                                 f"Gemini→Phone: send failed (WS likely closed), "
@@ -391,47 +434,35 @@ async def _gemini_reader(
                             f"{total_responses} total responses"
                         )
 
-                # Transcriptions
+                # Transcriptions — accumulate per speaker turn, flush on speaker change
                 if response.server_content:
                     sc = response.server_content
 
+                    # Agent speaking → flush callee buffer, accumulate agent text
                     if (
                         hasattr(sc, "output_transcription")
                         and sc.output_transcription
                         and sc.output_transcription.text
                     ):
-                        entry = {
-                            "speaker": "agent",
-                            "text": sc.output_transcription.text,
-                            "timestamp": datetime.now(timezone.utc).isoformat(),
-                        }
-                        state.transcript.append(entry)
-                        asyncio.create_task(send_callback(
-                            state.callback_url,
-                            "transcript_update",
-                            state.call_id,
-                            bridge_secret,
-                            transcript_entry=entry,
-                        ))
+                        _flush_transcript_buffer(state, "callee", bridge_secret)
+                        state._agent_text_buffer += sc.output_transcription.text
 
+                    # Callee speaking → flush agent buffer, accumulate callee text
                     if (
                         hasattr(sc, "input_transcription")
                         and sc.input_transcription
                         and sc.input_transcription.text
                     ):
-                        entry = {
-                            "speaker": "callee",
-                            "text": sc.input_transcription.text,
-                            "timestamp": datetime.now(timezone.utc).isoformat(),
-                        }
-                        state.transcript.append(entry)
-                        asyncio.create_task(send_callback(
-                            state.callback_url,
-                            "transcript_update",
-                            state.call_id,
-                            bridge_secret,
-                            transcript_entry=entry,
-                        ))
+                        _flush_transcript_buffer(state, "agent", bridge_secret)
+                        state._callee_text_buffer += sc.input_transcription.text
+
+                    # Turn complete → flush agent buffer (full utterance done)
+                    if hasattr(sc, 'turn_complete') and sc.turn_complete:
+                        _flush_transcript_buffer(state, "agent", bridge_secret)
+
+                    # Interrupted → flush agent buffer (partial utterance)
+                    if hasattr(sc, 'interrupted') and sc.interrupted:
+                        _flush_transcript_buffer(state, "agent", bridge_secret)
 
             # receive() ended (turn_complete) — loop back for next turn
             logger.info(f"Gemini turn complete, awaiting next turn ({state.call_id})")
@@ -569,6 +600,10 @@ async def _complete_call(
             logger.warning(f"Gemini session cleanup error for {call_id}: {e}")
         state.gemini_session = None
         state._gemini_ctx = None
+
+    # Flush any remaining transcription text
+    _flush_transcript_buffer(state, "agent", bridge_secret)
+    _flush_transcript_buffer(state, "callee", bridge_secret)
 
     duration = 0
     if state.connected_time:
