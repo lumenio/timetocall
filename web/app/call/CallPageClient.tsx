@@ -45,7 +45,7 @@ export function CallPageClient({ credits }: { credits: number }) {
       <Navbar />
       <main className="mx-auto max-w-lg px-4 pt-24 pb-16">
         <h1 className="font-serif text-2xl font-semibold mb-1">New Call</h1>
-        <p className="text-muted-foreground mb-8">
+        <p className="text-sm text-muted-foreground mb-8">
           Brief the AI agent and provide a phone number.
         </p>
 

@@ -45,14 +45,14 @@ export default function LoginPage() {
           <Link href="/" className="font-serif text-2xl font-semibold">
             TimeToCall
           </Link>
-          <p className="mt-2 text-muted-foreground">Sign in to start making calls</p>
+          <p className="mt-2 text-sm text-muted-foreground">Sign in to start making calls</p>
         </div>
 
         {sent ? (
           <Card>
             <CardContent className="pt-6 text-center">
               <Mail className="mx-auto size-10 text-muted-foreground mb-3" />
-              <h2 className="text-lg font-semibold">Check your email</h2>
+              <h2 className="font-serif text-lg font-semibold">Check your email</h2>
               <p className="mt-2 text-sm text-muted-foreground">
                 We sent a magic link to{" "}
                 <span className="font-medium text-foreground">{email}</span>
