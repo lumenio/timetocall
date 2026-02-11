@@ -5,6 +5,8 @@ import { useUser } from "@/lib/hooks/useUser";
 import { CreditBadge } from "./CreditBadge";
 import { createClient } from "@/lib/supabase/client";
 import { useRouter } from "next/navigation";
+import { Button } from "@/components/ui/button";
+import { Skeleton } from "@/components/ui/skeleton";
 
 export function Navbar() {
   const { user, loading } = useUser();
@@ -18,7 +20,7 @@ export function Navbar() {
   };
 
   return (
-    <nav className="fixed top-0 left-0 right-0 z-50 border-b border-border bg-background/80 backdrop-blur-sm">
+    <nav className="fixed top-0 left-0 right-0 z-50 border-b bg-background/80 backdrop-blur-sm">
       <div className="mx-auto flex h-14 max-w-5xl items-center justify-between px-4">
         <Link href="/" className="text-lg font-bold tracking-tight">
           TimeToCall
@@ -26,24 +28,18 @@ export function Navbar() {
 
         <div className="flex items-center gap-4">
           {loading ? (
-            <div className="h-8 w-24 animate-pulse rounded-lg bg-surface" />
+            <Skeleton className="h-8 w-24" />
           ) : user ? (
             <>
               <CreditBadge />
-              <button
-                onClick={handleSignOut}
-                className="text-sm text-muted hover:text-foreground transition-colors"
-              >
+              <Button variant="ghost" size="sm" onClick={handleSignOut}>
                 Sign Out
-              </button>
+              </Button>
             </>
           ) : (
-            <Link
-              href="/login"
-              className="rounded-lg bg-primary px-4 py-1.5 text-sm font-medium text-white transition-colors hover:bg-primary-hover"
-            >
-              Sign In
-            </Link>
+            <Button asChild size="sm">
+              <Link href="/login">Sign In</Link>
+            </Button>
           )}
         </div>
       </div>

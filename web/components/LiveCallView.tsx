@@ -1,6 +1,13 @@
 "use client";
 
 import { useEffect, useState, useRef } from "react";
+import Link from "next/link";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { AlertCircle, CheckCircle2 } from "lucide-react";
 
 interface TranscriptEntry {
   speaker: "agent" | "callee";
@@ -22,32 +29,28 @@ interface CallData {
 
 const STATUS_CONFIG: Record<
   string,
-  { label: string; color: string; pulse?: boolean }
+  { label: string; variant: "default" | "secondary" | "destructive" | "outline"; pulse?: boolean }
 > = {
-  pending: { label: "Pending", color: "bg-zinc-500" },
-  dialing: { label: "Dialing", color: "bg-primary", pulse: true },
-  ringing: { label: "Ringing", color: "bg-primary", pulse: true },
-  connected: { label: "Connected", color: "bg-warning", pulse: true },
-  completed: { label: "Completed", color: "bg-success" },
-  failed: { label: "Failed", color: "bg-danger" },
+  pending: { label: "Pending", variant: "secondary" },
+  dialing: { label: "Dialing", variant: "default", pulse: true },
+  ringing: { label: "Ringing", variant: "default", pulse: true },
+  connected: { label: "Connected", variant: "outline", pulse: true },
+  completed: { label: "Completed", variant: "secondary" },
+  failed: { label: "Failed", variant: "destructive" },
 };
 
 function StatusBadge({ status }: { status: string }) {
   const config = STATUS_CONFIG[status] || STATUS_CONFIG.pending;
   return (
-    <span className="inline-flex items-center gap-2 text-sm font-medium">
-      <span className="relative flex h-2.5 w-2.5">
+    <Badge variant={config.variant} className="gap-1.5">
+      <span className="relative flex h-2 w-2">
         {config.pulse && (
-          <span
-            className={`absolute inline-flex h-full w-full animate-ping rounded-full ${config.color} opacity-75`}
-          />
+          <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-current opacity-75" />
         )}
-        <span
-          className={`relative inline-flex h-2.5 w-2.5 rounded-full ${config.color}`}
-        />
+        <span className="relative inline-flex h-2 w-2 rounded-full bg-current" />
       </span>
       {config.label}
-    </span>
+    </Badge>
   );
 }
 
@@ -125,17 +128,18 @@ export function LiveCallView({ callId }: { callId: string }) {
 
   if (error) {
     return (
-      <div className="rounded-lg border border-danger/30 bg-danger/10 p-6 text-center">
-        <p className="text-danger">{error}</p>
-      </div>
+      <Alert variant="destructive">
+        <AlertCircle className="size-4" />
+        <AlertDescription>{error}</AlertDescription>
+      </Alert>
     );
   }
 
   if (!call) {
     return (
       <div className="space-y-4">
-        <div className="h-8 w-32 animate-pulse rounded-lg bg-surface" />
-        <div className="h-64 animate-pulse rounded-lg bg-surface" />
+        <Skeleton className="h-8 w-32" />
+        <Skeleton className="h-64 w-full" />
       </div>
     );
   }
@@ -146,82 +150,86 @@ export function LiveCallView({ callId }: { callId: string }) {
       <div className="flex items-center justify-between">
         <StatusBadge status={call.status} />
         {(call.status === "connected" || call.duration_seconds) && (
-          <span className="font-mono text-sm text-muted">
+          <span className="font-mono text-sm text-muted-foreground">
             {formatDuration(call.duration_seconds ?? elapsed)}
           </span>
         )}
       </div>
 
       {/* Transcript */}
-      <div className="rounded-lg border border-border bg-surface/50 p-4">
-        <h3 className="text-sm font-medium text-muted mb-3">Transcript</h3>
-        <div className="max-h-80 overflow-y-auto space-y-3">
-          {(!call.transcript || call.transcript.length === 0) && (
-            <p className="text-sm text-muted italic">
-              {isActive
-                ? "Waiting for conversation to start..."
-                : call.status === "failed"
-                  ? "No transcript available"
-                  : "No transcript yet"}
-            </p>
-          )}
-          {call.transcript?.map((entry, i) => (
-            <div
-              key={i}
-              className={`text-sm ${
-                entry.speaker === "agent" ? "text-primary" : "text-foreground"
-              }`}
-            >
-              <span className="font-medium">
-                {entry.speaker === "agent" ? "AI Agent" : "Callee"}:
-              </span>{" "}
-              {entry.text}
-            </div>
-          ))}
-          <div ref={transcriptEndRef} />
-        </div>
-      </div>
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-sm text-muted-foreground">Transcript</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="max-h-80 overflow-y-auto space-y-3">
+            {(!call.transcript || call.transcript.length === 0) && (
+              <p className="text-sm text-muted-foreground italic">
+                {isActive
+                  ? "Waiting for conversation to start..."
+                  : call.status === "failed"
+                    ? "No transcript available"
+                    : "No transcript yet"}
+              </p>
+            )}
+            {call.transcript?.map((entry, i) => (
+              <div
+                key={i}
+                className={`text-sm ${
+                  entry.speaker === "agent" ? "text-primary" : "text-foreground"
+                }`}
+              >
+                <span className="font-medium">
+                  {entry.speaker === "agent" ? "AI Agent" : "Callee"}:
+                </span>{" "}
+                {entry.text}
+              </div>
+            ))}
+            <div ref={transcriptEndRef} />
+          </div>
+        </CardContent>
+      </Card>
 
       {/* Summary */}
       {call.status === "completed" && call.summary && (
-        <div className="rounded-lg border border-success/30 bg-success/5 p-4">
-          <h3 className="text-sm font-medium text-success mb-2">
-            Call Summary
-          </h3>
-          <p className="text-sm text-foreground leading-relaxed">
-            {call.summary}
-          </p>
-        </div>
+        <Card className="border-success/30 bg-success/5">
+          <CardHeader className="pb-3">
+            <CardTitle className="flex items-center gap-2 text-sm text-success">
+              <CheckCircle2 className="size-4" />
+              Call Summary
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p className="text-sm leading-relaxed">{call.summary}</p>
+          </CardContent>
+        </Card>
       )}
 
       {/* Failed state */}
       {call.status === "failed" && (
-        <div className="rounded-lg border border-danger/30 bg-danger/5 p-4 text-center">
-          <p className="text-sm text-danger">
-            This call could not be completed.
-          </p>
-        </div>
+        <Alert variant="destructive">
+          <AlertCircle className="size-4" />
+          <AlertDescription>This call could not be completed.</AlertDescription>
+        </Alert>
       )}
 
       {/* End Call button */}
       {isActive && (
-        <button
+        <Button
+          variant="destructive"
+          className="w-full"
           onClick={handleEndCall}
           disabled={ending}
-          className="w-full rounded-lg border border-danger bg-danger/10 px-4 py-2.5 text-sm font-medium text-danger transition-colors hover:bg-danger/20 disabled:opacity-50"
         >
           {ending ? "Ending call..." : "End Call"}
-        </button>
+        </Button>
       )}
 
       {/* Back to new call */}
       {isTerminal && (
-        <a
-          href="/call"
-          className="block w-full rounded-lg border border-border px-4 py-2.5 text-center text-sm font-medium text-foreground transition-colors hover:bg-surface"
-        >
-          Make Another Call
-        </a>
+        <Button variant="outline" className="w-full" asChild>
+          <Link href="/call">Make Another Call</Link>
+        </Button>
       )}
     </div>
   );

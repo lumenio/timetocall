@@ -4,6 +4,8 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Navbar } from "@/components/Navbar";
 import { CallForm } from "@/components/CallForm";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { AlertCircle } from "lucide-react";
 
 export function CallPageClient({ credits }: { credits: number }) {
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -43,14 +45,15 @@ export function CallPageClient({ credits }: { credits: number }) {
       <Navbar />
       <main className="mx-auto max-w-lg px-4 pt-24 pb-16">
         <h1 className="text-2xl font-bold mb-1">New Call</h1>
-        <p className="text-muted mb-8">
+        <p className="text-muted-foreground mb-8">
           Brief the AI agent and provide a phone number.
         </p>
 
         {error && (
-          <div className="mb-6 rounded-lg border border-danger/30 bg-danger/10 px-4 py-3 text-sm text-danger">
-            {error}
-          </div>
+          <Alert variant="destructive" className="mb-6">
+            <AlertCircle className="size-4" />
+            <AlertDescription>{error}</AlertDescription>
+          </Alert>
         )}
 
         <CallForm

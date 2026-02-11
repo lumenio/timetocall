@@ -3,6 +3,12 @@
 import { useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import Link from "next/link";
+import { Mail } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Card, CardContent } from "@/components/ui/card";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 
 export default function LoginPage() {
   const [email, setEmail] = useState("");
@@ -39,49 +45,43 @@ export default function LoginPage() {
           <Link href="/" className="text-2xl font-bold tracking-tight">
             TimeToCall
           </Link>
-          <p className="mt-2 text-muted">Sign in to start making calls</p>
+          <p className="mt-2 text-muted-foreground">Sign in to start making calls</p>
         </div>
 
         {sent ? (
-          <div className="rounded-lg border border-border bg-surface p-6 text-center">
-            <div className="text-4xl mb-3">&#9993;</div>
-            <h2 className="text-lg font-semibold">Check your email</h2>
-            <p className="mt-2 text-sm text-muted">
-              We sent a magic link to{" "}
-              <span className="font-medium text-foreground">{email}</span>
-            </p>
-          </div>
+          <Card>
+            <CardContent className="pt-6 text-center">
+              <Mail className="mx-auto size-10 text-muted-foreground mb-3" />
+              <h2 className="text-lg font-semibold">Check your email</h2>
+              <p className="mt-2 text-sm text-muted-foreground">
+                We sent a magic link to{" "}
+                <span className="font-medium text-foreground">{email}</span>
+              </p>
+            </CardContent>
+          </Card>
         ) : (
           <form onSubmit={handleSubmit} className="space-y-4">
-            <div>
-              <label
-                htmlFor="email"
-                className="block text-sm font-medium mb-1.5"
-              >
-                Email address
-              </label>
-              <input
+            <div className="space-y-1.5">
+              <Label htmlFor="email">Email address</Label>
+              <Input
                 id="email"
                 type="email"
                 required
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 placeholder="you@example.com"
-                className="w-full rounded-lg border border-border bg-surface px-4 py-2.5 text-foreground placeholder:text-muted focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
               />
             </div>
 
             {error && (
-              <p className="text-sm text-danger">{error}</p>
+              <Alert variant="destructive">
+                <AlertDescription>{error}</AlertDescription>
+              </Alert>
             )}
 
-            <button
-              type="submit"
-              disabled={loading}
-              className="w-full rounded-lg bg-primary px-4 py-2.5 font-medium text-white transition-colors hover:bg-primary-hover disabled:opacity-50 disabled:cursor-not-allowed"
-            >
+            <Button type="submit" disabled={loading} className="w-full">
               {loading ? "Sending..." : "Send Magic Link"}
-            </button>
+            </Button>
           </form>
         )}
       </div>

@@ -1,33 +1,23 @@
 "use client";
 
+import { Coins } from "lucide-react";
 import { useUser } from "@/lib/hooks/useUser";
+import { Badge } from "@/components/ui/badge";
+import { Skeleton } from "@/components/ui/skeleton";
 
 export function CreditBadge() {
   const { credits, loading } = useUser();
 
   if (loading) {
-    return (
-      <div className="h-7 w-20 animate-pulse rounded-full bg-surface" />
-    );
+    return <Skeleton className="h-7 w-20 rounded-full" />;
   }
 
   if (credits === null) return null;
 
   return (
-    <span className="inline-flex items-center gap-1.5 rounded-full bg-surface px-3 py-1 text-sm font-medium">
-      <svg
-        width="14"
-        height="14"
-        viewBox="0 0 24 24"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="2"
-        className="text-warning"
-      >
-        <circle cx="12" cy="12" r="10" />
-        <path d="M12 6v12M6 12h12" />
-      </svg>
+    <Badge variant="secondary" className="gap-1.5 px-3 py-1 text-sm">
+      <Coins className="size-3.5 text-warning" />
       {credits} {credits === 1 ? "credit" : "credits"}
-    </span>
+    </Badge>
   );
 }

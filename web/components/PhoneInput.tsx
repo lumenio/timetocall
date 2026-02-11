@@ -7,23 +7,18 @@ import {
   getCountryCallingCode,
   type CountryCode,
 } from "libphonenumber-js";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 
 const POPULAR_COUNTRIES: CountryCode[] = [
-  "US",
-  "GB",
-  "FR",
-  "DE",
-  "ES",
-  "IT",
-  "JP",
-  "CN",
-  "KR",
-  "BR",
-  "MX",
-  "CA",
-  "AU",
-  "IN",
-  "RU",
+  "US", "GB", "FR", "DE", "ES", "IT", "JP", "CN", "KR", "BR", "MX", "CA", "AU", "IN", "RU",
 ];
 
 function getDefaultCountry(): CountryCode {
@@ -60,10 +55,10 @@ export function PhoneInput({ value, onChange, error }: PhoneInputProps) {
     }
   };
 
-  const handleCountryChange = (newCountry: CountryCode) => {
-    setCountry(newCountry);
-    // Re-validate with new country
-    const phone = parsePhoneNumberFromString(inputValue, newCountry);
+  const handleCountryChange = (newCountry: string) => {
+    const cc = newCountry as CountryCode;
+    setCountry(cc);
+    const phone = parsePhoneNumberFromString(inputValue, cc);
     if (phone && phone.isValid()) {
       onChange(phone.format("E.164"), true);
     }
@@ -76,35 +71,30 @@ export function PhoneInput({ value, onChange, error }: PhoneInputProps) {
   ];
 
   return (
-    <div>
-      <label className="block text-sm font-medium mb-1.5">Phone number</label>
+    <div className="space-y-1.5">
+      <Label>Phone number</Label>
       <div className="flex gap-2">
-        <select
-          value={country}
-          onChange={(e) =>
-            handleCountryChange(e.target.value as CountryCode)
-          }
-          className="w-28 shrink-0 rounded-lg border border-border bg-surface px-2 py-2.5 text-sm text-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
-        >
-          {sortedCountries.map((c) => (
-            <option key={c} value={c}>
-              {c} +{getCountryCallingCode(c)}
-            </option>
-          ))}
-        </select>
-        <input
+        <Select value={country} onValueChange={handleCountryChange}>
+          <SelectTrigger className="w-28 shrink-0">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent position="popper" className="max-h-60">
+            {sortedCountries.map((c) => (
+              <SelectItem key={c} value={c}>
+                {c} +{getCountryCallingCode(c)}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <Input
           type="tel"
           value={inputValue}
           onChange={(e) => handleChange(e.target.value)}
           placeholder="Phone number"
-          className={`flex-1 rounded-lg border px-4 py-2.5 bg-surface text-foreground placeholder:text-muted focus:outline-none focus:ring-1 ${
-            error
-              ? "border-danger focus:border-danger focus:ring-danger"
-              : "border-border focus:border-primary focus:ring-primary"
-          }`}
+          aria-invalid={!!error}
         />
       </div>
-      {error && <p className="mt-1.5 text-sm text-danger">{error}</p>}
+      {error && <p className="text-sm text-destructive">{error}</p>}
     </div>
   );
 }

@@ -1,7 +1,18 @@
 "use client";
 
 import { useState } from "react";
+import { Loader2 } from "lucide-react";
 import { PhoneInput } from "./PhoneInput";
+import { Button } from "@/components/ui/button";
+import { Textarea } from "@/components/ui/textarea";
+import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 
 const LANGUAGES = [
   { value: "auto", label: "Auto-detect" },
@@ -50,23 +61,18 @@ export function CallForm({ credits, onSubmit, isSubmitting }: CallFormProps) {
 
   return (
     <form onSubmit={handleSubmit} className="space-y-6">
-      <div>
-        <label
-          htmlFor="briefing"
-          className="block text-sm font-medium mb-1.5"
-        >
-          What do you need done?
-        </label>
-        <textarea
+      <div className="space-y-1.5">
+        <Label htmlFor="briefing">What do you need done?</Label>
+        <Textarea
           id="briefing"
           rows={4}
           value={briefing}
           onChange={(e) => setBriefing(e.target.value)}
           placeholder='e.g., Book a table for 2 at 8pm this Friday. Ask if they have a terrace. My name is Slava.'
-          className="w-full rounded-lg border border-border bg-surface px-4 py-3 text-foreground placeholder:text-muted focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary resize-none"
+          className="resize-none"
           maxLength={2000}
         />
-        <p className="mt-1 text-xs text-muted">
+        <p className="text-xs text-muted-foreground">
           {briefing.length < 10
             ? `${10 - briefing.length} more characters needed`
             : `${briefing.length}/2000`}
@@ -83,70 +89,43 @@ export function CallForm({ credits, onSubmit, isSubmitting }: CallFormProps) {
         error={phoneError}
       />
 
-      <div>
-        <label
-          htmlFor="language"
-          className="block text-sm font-medium mb-1.5"
-        >
-          Language preference
-        </label>
-        <select
-          id="language"
-          value={language}
-          onChange={(e) => setLanguage(e.target.value)}
-          className="w-full rounded-lg border border-border bg-surface px-4 py-2.5 text-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
-        >
-          {LANGUAGES.map((lang) => (
-            <option key={lang.value} value={lang.value}>
-              {lang.label}
-            </option>
-          ))}
-        </select>
+      <div className="space-y-1.5">
+        <Label htmlFor="language">Language preference</Label>
+        <Select value={language} onValueChange={setLanguage}>
+          <SelectTrigger className="w-full">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {LANGUAGES.map((lang) => (
+              <SelectItem key={lang.value} value={lang.value}>
+                {lang.label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
       </div>
 
-      <div className="flex items-center justify-between rounded-lg border border-border bg-surface/50 px-4 py-3">
-        <span className="text-sm text-muted">Cost</span>
+      <div className="flex items-center justify-between rounded-lg border bg-card/50 px-4 py-3">
+        <span className="text-sm text-muted-foreground">Cost</span>
         <span className="text-sm font-medium">1 credit</span>
       </div>
 
       {credits <= 0 && (
-        <p className="text-sm text-danger text-center">
+        <p className="text-sm text-destructive text-center">
           You&apos;ve used all your free credits. More credits coming soon!
         </p>
       )}
 
-      <button
-        type="submit"
-        disabled={!canSubmit}
-        className="w-full rounded-lg bg-primary px-4 py-3 font-semibold text-white transition-colors hover:bg-primary-hover disabled:opacity-50 disabled:cursor-not-allowed"
-      >
+      <Button type="submit" disabled={!canSubmit} className="w-full" size="lg">
         {isSubmitting ? (
-          <span className="inline-flex items-center gap-2">
-            <svg
-              className="animate-spin h-4 w-4"
-              viewBox="0 0 24 24"
-              fill="none"
-            >
-              <circle
-                className="opacity-25"
-                cx="12"
-                cy="12"
-                r="10"
-                stroke="currentColor"
-                strokeWidth="4"
-              />
-              <path
-                className="opacity-75"
-                fill="currentColor"
-                d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"
-              />
-            </svg>
+          <>
+            <Loader2 className="animate-spin" />
             Starting call...
-          </span>
+          </>
         ) : (
           "Make the Call"
         )}
-      </button>
+      </Button>
     </form>
   );
 }
