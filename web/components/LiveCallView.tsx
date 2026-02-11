@@ -221,7 +221,6 @@ export function LiveCallView({ callId }: { callId: string }) {
       {/* End Call button */}
       {isActive && (
         <Button
-          variant="destructive"
           className="w-full"
           onClick={handleEndCall}
           disabled={ending}
