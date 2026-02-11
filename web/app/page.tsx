@@ -141,7 +141,7 @@ export default function HomePage() {
       <Separator />
       <footer className="py-8 px-4">
         <div className="mx-auto max-w-5xl flex items-center justify-between font-mono text-xs text-muted-foreground">
-          <span>TimeToCall</span>
+          <span>caal.ai</span>
           <span>&copy; {new Date().getFullYear()}</span>
         </div>
       </footer>
