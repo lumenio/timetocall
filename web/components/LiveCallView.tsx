@@ -162,6 +162,21 @@ export function LiveCallView({ callId }: { callId: string }) {
         <p className="text-sm text-muted-foreground">{call.briefing}</p>
       </div>
 
+      {/* Summary */}
+      {call.status === "completed" && call.summary && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-sm">
+              <CheckCircle2 className="size-4" />
+              Call Summary
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p className="text-sm leading-relaxed">{call.summary}</p>
+          </CardContent>
+        </Card>
+      )}
+
       {/* Transcript */}
       <Card>
         <CardHeader>
@@ -195,21 +210,6 @@ export function LiveCallView({ callId }: { callId: string }) {
           </div>
         </CardContent>
       </Card>
-
-      {/* Summary */}
-      {call.status === "completed" && call.summary && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2 text-sm">
-              <CheckCircle2 className="size-4" />
-              Call Summary
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-sm leading-relaxed">{call.summary}</p>
-          </CardContent>
-        </Card>
-      )}
 
       {/* Failed state */}
       {call.status === "failed" && (
