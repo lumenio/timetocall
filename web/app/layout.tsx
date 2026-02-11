@@ -25,7 +25,7 @@ export default function RootLayout({
           <div className="absolute -top-[20%] left-[10%] h-[600px] w-[600px] rounded-full bg-pink-200/30 blur-[120px]" />
           <div className="absolute top-[30%] -right-[10%] h-[500px] w-[500px] rounded-full bg-violet-200/25 blur-[120px]" />
           <div className="absolute -bottom-[10%] left-[30%] h-[500px] w-[500px] rounded-full bg-sky-200/25 blur-[120px]" />
-          <div className="absolute top-[60%] left-[5%] h-[450px] w-[450px] rounded-full bg-amber-200/25 blur-[120px]" />
+          <div className="absolute -top-[5%] -right-[5%] h-[450px] w-[450px] rounded-full bg-amber-200/25 blur-[120px]" />
         </div>
         {children}
       </body>
