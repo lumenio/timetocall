@@ -110,7 +110,7 @@ export default function HomePage() {
             {USE_CASES.map((uc, i) => (
               <Card key={i}>
                 <CardContent className="pt-6">
-                  <h3 className="font-serif text-lg font-semibold mb-2">{uc.title}</h3>
+                  <h3 className="font-serif text-xl font-semibold mb-2">{uc.title}</h3>
                   <p className="text-sm text-muted-foreground leading-relaxed">
                     {uc.description}
                   </p>
@@ -141,7 +141,7 @@ export default function HomePage() {
       <Separator />
       <footer className="py-8 px-4">
         <div className="mx-auto max-w-5xl flex items-center justify-between font-mono text-xs text-muted-foreground">
-          <span>caal.ai</span>
+          <span>caall.ai</span>
           <span>&copy; {new Date().getFullYear()}</span>
         </div>
       </footer>
