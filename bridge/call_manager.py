@@ -22,6 +22,16 @@ from telnyx_handler import TelnyxMediaHandler, initiate_call, start_streaming, h
 
 logger = logging.getLogger(__name__)
 
+
+def _fire_and_forget(coro, label: str):
+    """Create a task that logs exceptions instead of silently swallowing them."""
+    task = asyncio.create_task(coro)
+    task.add_done_callback(
+        lambda t: logger.exception("%s failed", label, exc_info=t.exception())
+        if t.exception() else None
+    )
+    return task
+
 MAX_CALL_DURATION = 5 * 60  # 5 minutes
 NO_ANSWER_TIMEOUT = 30  # seconds
 
@@ -326,13 +336,16 @@ def _flush_transcript_buffer(state: CallState, speaker: str, bridge_secret: str)
 
     entry = {"speaker": speaker, "text": text, "timestamp": _now_iso()}
     state.transcript.append(entry)
-    asyncio.create_task(send_callback(
-        state.callback_url,
-        "transcript_update",
-        state.call_id,
-        bridge_secret,
-        transcript_entry=entry,
-    ))
+    _fire_and_forget(
+        send_callback(
+            state.callback_url,
+            "transcript_update",
+            state.call_id,
+            bridge_secret,
+            transcript_entry=entry,
+        ),
+        "transcript_update callback",
+    )
 
 
 async def _gemini_reader(
