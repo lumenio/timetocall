@@ -156,9 +156,15 @@ export function LiveCallView({ callId }: { callId: string }) {
         )}
       </div>
 
+      {/* Call context */}
+      <div className="space-y-1">
+        <p className="font-mono text-sm font-medium">{call.phone_number}</p>
+        <p className="text-sm text-muted-foreground">{call.briefing}</p>
+      </div>
+
       {/* Transcript */}
       <Card>
-        <CardHeader className="pb-3">
+        <CardHeader>
           <CardTitle className="text-sm text-muted-foreground">Transcript</CardTitle>
         </CardHeader>
         <CardContent>
@@ -192,9 +198,9 @@ export function LiveCallView({ callId }: { callId: string }) {
 
       {/* Summary */}
       {call.status === "completed" && call.summary && (
-        <Card className="border-success/30 bg-success/5">
-          <CardHeader className="pb-3">
-            <CardTitle className="flex items-center gap-2 text-sm text-success">
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-sm">
               <CheckCircle2 className="size-4" />
               Call Summary
             </CardTitle>
@@ -225,11 +231,16 @@ export function LiveCallView({ callId }: { callId: string }) {
         </Button>
       )}
 
-      {/* Back to new call */}
+      {/* Navigation */}
       {isTerminal && (
-        <Button variant="outline" className="w-full" asChild>
-          <Link href="/call">Make Another Call</Link>
-        </Button>
+        <div className="flex gap-3">
+          <Button variant="outline" className="flex-1" asChild>
+            <Link href="/history">Call History</Link>
+          </Button>
+          <Button variant="outline" className="flex-1" asChild>
+            <Link href="/call">New Call</Link>
+          </Button>
+        </div>
       )}
     </div>
   );

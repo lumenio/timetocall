@@ -2,8 +2,15 @@
 
 import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
-import { Card, CardContent } from "@/components/ui/card";
-import { Phone, Clock } from "lucide-react";
+import {
+  Card,
+  CardAction,
+  CardDescription,
+  CardFooter,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { Clock } from "lucide-react";
 
 interface CallCardProps {
   id: string;
@@ -58,30 +65,25 @@ export function CallCard({
 
   return (
     <Link href={`/call/${id}`}>
-      <Card className="transition-colors hover:bg-muted/50">
-        <CardContent className="flex items-start gap-4 p-4">
-          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-muted">
-            <Phone className="size-4 text-muted-foreground" />
-          </div>
-          <div className="min-w-0 flex-1 space-y-1">
-            <div className="flex items-center justify-between gap-2">
-              <span className="font-mono text-sm font-medium">{phone_number}</span>
-              <Badge variant={config.variant}>{config.label}</Badge>
-            </div>
-            <p className="truncate text-sm text-muted-foreground">
-              {summary || briefing}
-            </p>
-            <div className="flex items-center gap-3 text-xs text-muted-foreground">
-              <span>{formatRelativeTime(created_at)}</span>
-              {duration_seconds != null && (
-                <span className="flex items-center gap-1">
-                  <Clock className="size-3" />
-                  {formatDuration(duration_seconds)}
-                </span>
-              )}
-            </div>
-          </div>
-        </CardContent>
+      <Card className="gap-2 py-4 transition-colors hover:bg-accent/50">
+        <CardHeader>
+          <CardTitle className="font-mono text-sm">{phone_number}</CardTitle>
+          <CardDescription className="truncate">
+            {summary || briefing}
+          </CardDescription>
+          <CardAction>
+            <Badge variant={config.variant}>{config.label}</Badge>
+          </CardAction>
+        </CardHeader>
+        <CardFooter className="gap-3 text-xs text-muted-foreground">
+          <span>{formatRelativeTime(created_at)}</span>
+          {duration_seconds != null && (
+            <span className="flex items-center gap-1">
+              <Clock className="size-3" />
+              {formatDuration(duration_seconds)}
+            </span>
+          )}
+        </CardFooter>
       </Card>
     </Link>
   );

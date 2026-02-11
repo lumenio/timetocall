@@ -3,6 +3,7 @@ import { Pencil, Phone, Check, ArrowRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
+import { Navbar } from "@/components/Navbar";
 
 const STEPS = [
   {
@@ -48,15 +49,7 @@ const USE_CASES = [
 export default function HomePage() {
   return (
     <div className="min-h-screen">
-      {/* Nav */}
-      <nav className="fixed top-0 left-0 right-0 z-50 border-b bg-background/80 backdrop-blur-sm">
-        <div className="mx-auto flex h-14 max-w-5xl items-center justify-between px-4">
-          <span className="text-lg font-bold tracking-tight">TimeToCall</span>
-          <Button asChild size="sm">
-            <Link href="/login">Sign In</Link>
-          </Button>
-        </div>
-      </nav>
+      <Navbar />
 
       {/* Hero */}
       <section className="pt-32 pb-20 px-4">
