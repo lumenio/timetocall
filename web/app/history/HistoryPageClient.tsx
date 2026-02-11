@@ -84,7 +84,7 @@ export function HistoryPageClient() {
         )}
 
         {!loading && calls.length > 0 && (
-          <div className="space-y-3">
+          <div className="space-y-4">
             {calls.map((call) => (
               <CallCard key={call.id} {...call} />
             ))}
