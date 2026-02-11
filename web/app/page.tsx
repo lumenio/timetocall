@@ -54,10 +54,10 @@ export default function HomePage() {
       {/* Hero */}
       <section className="pt-32 pb-20 px-4">
         <div className="mx-auto max-w-3xl text-center">
-          <h1 className="font-serif text-5xl sm:text-6xl font-semibold tracking-[-0.02em] leading-tight">
+          <h1 className="font-serif text-5xl sm:text-6xl font-normal tracking-[-0.02em] leading-tight">
             Hate making phone calls?
             <br />
-            <em className="font-normal">We got you.</em>
+            <em>We got you.</em>
           </h1>
           <p className="mt-8 font-mono text-xs uppercase tracking-[0.15em] text-muted-foreground">
             Any question. Any language. Just brief the agent and get it done.
