@@ -10,6 +10,22 @@ export async function GET(request: Request) {
     const supabase = await createClient();
     const { error } = await supabase.auth.exchangeCodeForSession(code);
     if (!error) {
+      // Ensure a public.users row exists for this auth user
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+
+      if (user) {
+        await supabase.from("users").upsert(
+          {
+            id: user.id,
+            email: user.email,
+            credits: 3,
+          },
+          { onConflict: "id", ignoreDuplicates: true }
+        );
+      }
+
       return NextResponse.redirect(`${origin}${next}`);
     }
   }
