@@ -13,7 +13,6 @@
     "@supabase/supabase-js": "^2.95.3",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
-    "framer-motion": "^12.34.0",
     "libphonenumber-js": "^1.12.36",
     "lucide-react": "^0.563.0",
     "next": "16.1.6",
