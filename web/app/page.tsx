@@ -89,13 +89,15 @@ export default function HomePage() {
           <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
             {STEPS.map((step, i) => (
               <div key={i} className="text-left md:text-center flex md:block items-start gap-4">
-                <div className="shrink-0 mb-4 flex size-14 items-center justify-center rounded-full bg-primary/10 text-primary md:mx-auto">
+                <div className="shrink-0 md:mb-4 flex size-14 items-center justify-center rounded-full bg-primary/10 text-primary md:mx-auto">
                   {step.icon}
                 </div>
-                <h3 className="font-serif text-xl font-semibold mb-2">{step.title}</h3>
-                <p className="text-sm text-muted-foreground leading-relaxed">
-                  {step.description}
-                </p>
+                <div>
+                  <h3 className="font-serif text-xl font-semibold mb-2">{step.title}</h3>
+                  <p className="text-sm text-muted-foreground leading-relaxed">
+                    {step.description}
+                  </p>
+                </div>
               </div>
             ))}
           </div>
