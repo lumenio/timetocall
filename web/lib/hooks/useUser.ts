@@ -7,6 +7,7 @@ import type { User } from "@supabase/supabase-js";
 export function useUser() {
   const [user, setUser] = useState<User | null>(null);
   const [credits, setCredits] = useState<number | null>(null);
+  const [referralCode, setReferralCode] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const supabase = createClient();
 
@@ -20,10 +21,11 @@ export function useUser() {
       if (user) {
         const { data } = await supabase
           .from("users")
-          .select("credits")
+          .select("credits, referral_code")
           .eq("id", user.id)
           .single();
         setCredits(data?.credits ?? 0);
+        setReferralCode(data?.referral_code ?? null);
       }
 
       setLoading(false);
@@ -37,6 +39,7 @@ export function useUser() {
       setUser(session?.user ?? null);
       if (!session?.user) {
         setCredits(null);
+        setReferralCode(null);
         setLoading(false);
       }
     });
@@ -54,5 +57,5 @@ export function useUser() {
     setCredits(data?.credits ?? 0);
   };
 
-  return { user, credits, loading, refreshCredits };
+  return { user, credits, referralCode, loading, refreshCredits };
 }

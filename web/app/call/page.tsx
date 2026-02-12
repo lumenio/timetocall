@@ -14,9 +14,9 @@ export default async function CallPage() {
 
   const { data } = await supabase
     .from("users")
-    .select("credits")
+    .select("credits, referral_code")
     .eq("id", user.id)
     .single();
 
-  return <CallPageClient credits={data?.credits ?? 0} />;
+  return <CallPageClient credits={data?.credits ?? 0} referralCode={data?.referral_code ?? null} />;
 }

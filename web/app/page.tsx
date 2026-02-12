@@ -1,9 +1,11 @@
+import { Suspense } from "react";
 import Link from "next/link";
 import { Pencil, Phone, Check, ArrowRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { Navbar } from "@/components/Navbar";
+import { RefCapture } from "@/components/RefCapture";
 
 const STEPS = [
   {
@@ -49,6 +51,7 @@ const USE_CASES = [
 export default function HomePage() {
   return (
     <div className="min-h-screen">
+      <Suspense><RefCapture /></Suspense>
       <Navbar />
 
       {/* Hero */}
@@ -71,7 +74,7 @@ export default function HomePage() {
             </Button>
           </div>
           <p className="mt-4 font-mono text-xs text-muted-foreground">
-            3 free calls to start. No credit card needed.
+            Invite friends to earn free credits.
           </p>
         </div>
       </section>
@@ -129,7 +132,7 @@ export default function HomePage() {
             Ready to stop dialing?
           </h2>
           <p className="text-muted-foreground mb-8">
-            Sign up in 10 seconds. Your first 3 calls are free.
+            Sign up in 10 seconds. Invite friends, earn free calls.
           </p>
           <Button asChild className="rounded-full px-8 font-mono text-xs uppercase tracking-[0.1em]">
             <Link href="/call">Get Started</Link>

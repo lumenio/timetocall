@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import Link from "next/link";
 import { useUser } from "@/lib/hooks/useUser";
 import { CreditBadge } from "./CreditBadge";
@@ -7,9 +8,11 @@ import { createClient } from "@/lib/supabase/client";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Copy, Check } from "lucide-react";
 
 export function Navbar() {
-  const { user, loading } = useUser();
+  const { user, referralCode, loading } = useUser();
+  const [copied, setCopied] = useState(false);
   const router = useRouter();
   const supabase = createClient();
 
@@ -32,6 +35,19 @@ export function Navbar() {
           ) : user ? (
             <>
               <CreditBadge />
+              {referralCode && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => {
+                    navigator.clipboard.writeText(`${window.location.origin}/?ref=${referralCode}`);
+                    setCopied(true);
+                    setTimeout(() => setCopied(false), 2000);
+                  }}
+                >
+                  {copied ? <><Check className="size-3.5 mr-1" /> Copied</> : <><Copy className="size-3.5 mr-1" /> Invite</>}
+                </Button>
+              )}
               <Button variant="ghost" size="sm" asChild>
                 <Link href="/history">History</Link>
               </Button>

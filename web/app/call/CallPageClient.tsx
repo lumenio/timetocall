@@ -7,7 +7,7 @@ import { CallForm } from "@/components/CallForm";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { AlertCircle } from "lucide-react";
 
-export function CallPageClient({ credits }: { credits: number }) {
+export function CallPageClient({ credits, referralCode }: { credits: number; referralCode: string | null }) {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState("");
   const router = useRouter();
@@ -58,6 +58,7 @@ export function CallPageClient({ credits }: { credits: number }) {
 
         <CallForm
           credits={credits}
+          referralCode={referralCode}
           onSubmit={handleSubmit}
           isSubmitting={isSubmitting}
         />
