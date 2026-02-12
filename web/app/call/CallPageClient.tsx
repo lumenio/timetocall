@@ -4,7 +4,6 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Navbar } from "@/components/Navbar";
 import { CallForm } from "@/components/CallForm";
-import { Alert, AlertDescription } from "@/components/ui/alert";
 import { AlertCircle } from "lucide-react";
 
 export function CallPageClient({ credits, referralCode }: { credits: number; referralCode: string | null }) {
@@ -50,10 +49,10 @@ export function CallPageClient({ credits, referralCode }: { credits: number; ref
         </p>
 
         {error && (
-          <Alert variant="destructive" className="mb-6">
-            <AlertCircle className="size-4" />
-            <AlertDescription>{error}</AlertDescription>
-          </Alert>
+          <div className="mb-6 flex items-start gap-3 rounded-lg border border-destructive/20 bg-destructive/5 px-4 py-3">
+            <AlertCircle className="size-4 shrink-0 translate-y-0.5 text-destructive" />
+            <p className="text-sm text-foreground">{error}</p>
+          </div>
         )}
 
         <CallForm
