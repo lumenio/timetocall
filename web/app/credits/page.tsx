@@ -1,3 +1,4 @@
+import { Suspense } from "react";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { CreditsPageClient } from "./CreditsPageClient";
@@ -19,9 +20,11 @@ export default async function CreditsPage() {
     .single();
 
   return (
-    <CreditsPageClient
-      credits={data?.credits ?? 0}
-      referralCode={data?.referral_code ?? null}
-    />
+    <Suspense>
+      <CreditsPageClient
+        credits={data?.credits ?? 0}
+        referralCode={data?.referral_code ?? null}
+      />
+    </Suspense>
   );
 }

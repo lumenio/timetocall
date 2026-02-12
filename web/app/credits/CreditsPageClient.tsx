@@ -1,11 +1,13 @@
 "use client";
 
 import { useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { Navbar } from "@/components/Navbar";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
-import { Copy, Check, CreditCard, Users } from "lucide-react";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Copy, Check, CreditCard, Users, Loader2, CircleCheck } from "lucide-react";
 
 export function CreditsPageClient({
   credits,
@@ -14,11 +16,25 @@ export function CreditsPageClient({
   credits: number;
   referralCode: string | null;
 }) {
+  const searchParams = useSearchParams();
+  const success = searchParams.get("success") === "1";
   const [copied, setCopied] = useState(false);
+  const [buying, setBuying] = useState(false);
 
   const referralUrl = referralCode
     ? `${typeof window !== "undefined" ? window.location.origin : ""}/?ref=${referralCode}`
     : "";
+
+  const handleBuy = async () => {
+    setBuying(true);
+    try {
+      const res = await fetch("/api/checkout", { method: "POST" });
+      const { url } = await res.json();
+      if (url) window.location.href = url;
+    } catch {
+      setBuying(false);
+    }
+  };
 
   const handleCopy = () => {
     navigator.clipboard.writeText(referralUrl);
@@ -38,6 +54,15 @@ export function CreditsPageClient({
           </span>
         </p>
 
+        {success && (
+          <Alert className="mb-6">
+            <CircleCheck className="size-4" />
+            <AlertDescription>
+              Payment successful! Your credits have been added.
+            </AlertDescription>
+          </Alert>
+        )}
+
         <div className="space-y-4">
           {/* Buy credits */}
           <Card>
@@ -51,12 +76,16 @@ export function CreditsPageClient({
                   <p className="mt-1 text-sm text-muted-foreground">
                     5 credits for $9.99. One credit per call.
                   </p>
-                  <Button className="mt-4" disabled>
-                    Buy 5 Credits &mdash; $9.99
+                  <Button className="mt-4" onClick={handleBuy} disabled={buying}>
+                    {buying ? (
+                      <>
+                        <Loader2 className="animate-spin size-4 mr-1" />
+                        Redirecting...
+                      </>
+                    ) : (
+                      "Buy 5 Credits \u2014 $9.99"
+                    )}
                   </Button>
-                  <p className="mt-2 text-xs text-muted-foreground">
-                    Payments coming soon.
-                  </p>
                 </div>
               </div>
             </CardContent>
