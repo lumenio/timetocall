@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
-import { bridgeRequest } from "@/lib/api";
+import { bridgeRequest, BridgeError } from "@/lib/api";
 import { validatePhoneNumber, validateBriefing } from "@/lib/validators";
 
 export async function POST(request: Request) {
@@ -132,11 +132,15 @@ export async function POST(request: Request) {
       .from("calls")
       .update({ status: "failed" })
       .eq("id", call.id);
+
+    if (err instanceof BridgeError && err.status === 422) {
+      return NextResponse.json(
+        { error: err.detail },
+        { status: 422 }
+      );
+    }
     return NextResponse.json(
-      {
-        error:
-          "Failed to start call. The audio bridge may be unavailable.",
-      },
+      { error: "Failed to start call. The audio bridge may be unavailable." },
       { status: 502 }
     );
   }

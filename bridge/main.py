@@ -5,6 +5,7 @@ from fastapi import FastAPI, WebSocket, Request, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
 import call_manager
+from gemini_bridge import create_gemini_client, moderate_briefing
 
 load_dotenv()
 
@@ -62,6 +63,17 @@ async def start_call(request: Request):
     for field in required:
         if field not in body:
             raise HTTPException(status_code=400, detail=f"Missing {field}")
+
+    # Content moderation check
+    try:
+        rejection = await moderate_briefing(create_gemini_client(), body["briefing"])
+        if rejection:
+            logger.warning(f"Briefing rejected for {body['call_id']}: {rejection}")
+            raise HTTPException(status_code=422, detail=f"Briefing rejected: {rejection}")
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Moderation check failed, allowing call: {e}")
 
     try:
         call_control_id = await call_manager.start_call(

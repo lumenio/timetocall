@@ -1,6 +1,17 @@
 const BRIDGE_URL = process.env.AUDIO_BRIDGE_URL || "http://localhost:8080";
 const BRIDGE_SECRET = process.env.AUDIO_BRIDGE_SECRET || "";
 
+export class BridgeError extends Error {
+  status: number;
+  detail: string;
+
+  constructor(status: number, detail: string) {
+    super(`Bridge request failed (${status}): ${detail}`);
+    this.status = status;
+    this.detail = detail;
+  }
+}
+
 export async function bridgeRequest(
   path: string,
   body: Record<string, unknown>
@@ -15,8 +26,14 @@ export async function bridgeRequest(
   });
 
   if (!res.ok) {
-    const text = await res.text().catch(() => "");
-    throw new Error(`Bridge request failed (${res.status}): ${text}`);
+    let detail = "";
+    try {
+      const json = await res.json();
+      detail = json.detail || JSON.stringify(json);
+    } catch {
+      detail = await res.text().catch(() => "Unknown error");
+    }
+    throw new BridgeError(res.status, detail);
   }
 
   return res.json();

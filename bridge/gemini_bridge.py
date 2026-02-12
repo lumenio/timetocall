@@ -3,7 +3,7 @@ from google import genai
 from google.genai import types
 
 MODEL = "gemini-2.5-flash-native-audio-preview-12-2025"
-SUMMARY_MODEL = "gemini-2.0-flash"
+SUMMARY_MODEL = "gemini-2.5-flash"
 
 
 def build_system_prompt(briefing: str, user_name: str, language: str) -> str:
@@ -65,6 +65,37 @@ def create_gemini_config(system_prompt: str) -> types.LiveConnectConfig:
 
 def create_gemini_client() -> genai.Client:
     return genai.Client(api_key=os.environ["GOOGLE_API_KEY"])
+
+
+async def moderate_briefing(client: genai.Client, briefing: str) -> str | None:
+    """Check if a briefing contains illegal, abusive, or telemarketing content.
+
+    Returns None if the briefing is OK, or a rejection reason string if blocked.
+    """
+    response = await client.aio.models.generate_content(
+        model=SUMMARY_MODEL,
+        contents=(
+            "You are a content moderation filter for a phone calling service. "
+            "A user has submitted a briefing for an AI agent to call someone on their behalf.\n\n"
+            "REJECT the briefing if it involves ANY of the following:\n"
+            "- Telemarketing, cold sales, or spam calls\n"
+            "- Threats, harassment, intimidation, or stalking\n"
+            "- Fraud, scams, or impersonation of authorities\n"
+            "- Illegal activity (drug deals, extortion, etc.)\n"
+            "- Hate speech or discrimination\n"
+            "- Calls to emergency services (911, 112, etc.)\n\n"
+            "ALLOW normal tasks like: booking reservations, asking about business hours, "
+            "scheduling appointments, checking availability, making inquiries, cancellations, etc.\n\n"
+            f"BRIEFING:\n{briefing}\n\n"
+            "Respond with EXACTLY one line:\n"
+            "OK - if the briefing is acceptable\n"
+            "REJECT: <short reason> - if the briefing should be blocked"
+        ),
+    )
+    text = (response.text or "").strip()
+    if text.upper().startswith("REJECT"):
+        return text.split(":", 1)[1].strip() if ":" in text else "Content policy violation"
+    return None
 
 
 async def generate_summary(
