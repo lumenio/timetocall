@@ -24,14 +24,14 @@ interface CallCardProps {
 
 const STATUS_CONFIG: Record<
   string,
-  { label: string; variant: "default" | "secondary" | "destructive" | "outline" }
+  { label: string; variant: "default" | "secondary" | "destructive" | "outline"; className?: string }
 > = {
   pending: { label: "Pending", variant: "secondary" },
   dialing: { label: "Dialing", variant: "default" },
   ringing: { label: "Ringing", variant: "default" },
   connected: { label: "Connected", variant: "outline" },
   completed: { label: "Completed", variant: "secondary" },
-  failed: { label: "Failed", variant: "destructive" },
+  failed: { label: "Failed", variant: "secondary", className: "bg-destructive/10 text-destructive border-destructive/20 hover:bg-destructive/15" },
 };
 
 function formatDuration(seconds: number): string {
@@ -72,7 +72,7 @@ export function CallCard({
             {summary || briefing}
           </CardDescription>
           <CardAction>
-            <Badge variant={config.variant}>{config.label}</Badge>
+            <Badge variant={config.variant} className={config.className}>{config.label}</Badge>
           </CardAction>
         </CardHeader>
         <CardFooter className="gap-3 text-xs text-muted-foreground">
