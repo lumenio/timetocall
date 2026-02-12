@@ -57,7 +57,7 @@ export default function HomePage() {
       {/* Hero */}
       <section className="pt-32 pb-20 px-4">
         <div className="mx-auto max-w-3xl text-center">
-          <h1 className="font-serif text-5xl sm:text-6xl font-normal tracking-[-0.02em] leading-tight">
+          <h1 className="font-serif text-4xl sm:text-6xl font-normal tracking-[-0.02em] leading-tight">
             Hate making phone calls?
             <br />
             <em>We got you.</em>
@@ -88,8 +88,8 @@ export default function HomePage() {
           </h2>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
             {STEPS.map((step, i) => (
-              <div key={i} className="text-center">
-                <div className="mx-auto mb-4 flex size-14 items-center justify-center rounded-full bg-primary/10 text-primary">
+              <div key={i} className="text-left md:text-center flex md:block items-start gap-4">
+                <div className="shrink-0 mb-4 flex size-14 items-center justify-center rounded-full bg-primary/10 text-primary md:mx-auto">
                   {step.icon}
                 </div>
                 <h3 className="font-serif text-xl font-semibold mb-2">{step.title}</h3>
