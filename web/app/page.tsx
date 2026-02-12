@@ -11,17 +11,17 @@ const STEPS = [
   {
     icon: <Pencil className="size-6" />,
     title: "Brief",
-    description: "Tell us what you need done. Any language, any task.",
+    description: "Tell the AI what you need done. Any language, any task.",
   },
   {
     icon: <Phone className="size-6" />,
     title: "Call",
-    description: "AI agent calls on your behalf and handles the conversation.",
+    description: "AI calls on your behalf. You see the conversation live.",
   },
   {
     icon: <Check className="size-6" />,
     title: "Done",
-    description: "Get a summary and full transcript of what happened.",
+    description: "Get a summary of what happened.",
   },
 ];
 
