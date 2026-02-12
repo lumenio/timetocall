@@ -66,8 +66,8 @@ export function CreditsPageClient({
         <div className="space-y-4">
           {/* Buy credits */}
           <Card>
-            <CardContent className="pt-6">
-              <div className="flex items-center gap-4">
+            <CardContent>
+              <div className="flex items-start gap-4">
                 <div className="flex size-10 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary">
                   <CreditCard className="size-5" />
                 </div>
@@ -99,8 +99,8 @@ export function CreditsPageClient({
 
           {/* Invite a friend */}
           <Card>
-            <CardContent className="pt-6">
-              <div className="flex items-center gap-4">
+            <CardContent>
+              <div className="flex items-start gap-4">
                 <div className="flex size-10 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary">
                   <Users className="size-5" />
                 </div>
