@@ -75,7 +75,7 @@ export function CreditsPageClient({
                 <div className="flex size-10 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary">
                   <Users className="size-5" />
                 </div>
-                <div className="flex-1">
+                <div className="flex-1 min-w-0">
                   <h2 className="font-serif text-lg font-semibold">Invite a friend</h2>
                   <p className="mt-1 text-sm text-muted-foreground">
                     Get 1 free credit for every friend who signs up.
