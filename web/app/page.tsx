@@ -62,7 +62,7 @@ export default function HomePage() {
             <br />
             <em>We got you.</em>
           </h1>
-          <p className="mt-8 font-mono text-xs uppercase tracking-[0.15em] text-muted-foreground">
+          <p className="mt-8 font-mono text-xs uppercase tracking-[0.15em] text-foreground/60">
             Any question. Any language. Just brief the agent and get it done.
           </p>
           <div className="mt-10">
