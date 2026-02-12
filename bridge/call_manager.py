@@ -176,6 +176,11 @@ async def handle_call_answered(call_id: str, bridge_secret: str):
     if not state:
         return
 
+    # Guard against duplicate call.answered webhooks from Telnyx
+    if state.answer_event.is_set():
+        logger.info(f"Ignoring duplicate call.answered for {call_id}")
+        return
+
     state.answer_event.set()
     logger.info(f"Call answered: {call_id}")
 

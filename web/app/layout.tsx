@@ -20,7 +20,7 @@ const spaceMono = Space_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "TimeToCall — AI Phone Agent",
+  title: "caall.ai — AI Phone Agent",
   description:
     "Hate making phone calls? We got you. AI calls on your behalf and reports back.",
 };
