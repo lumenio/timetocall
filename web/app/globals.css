@@ -119,6 +119,29 @@
   --sidebar-ring: oklch(0.623 0.214 259.1);
 }
 
+.animate-cta-breathe {
+  transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.animate-cta-breathe:hover {
+  transform: scale(1.05);
+}
+
+.animate-cta-breathe svg {
+  transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.animate-cta-breathe:hover svg {
+  transform: translateX(4px);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-cta-breathe,
+  .animate-cta-breathe svg {
+    transition: none;
+  }
+}
+
 @layer base {
   * {
     @apply border-border outline-ring/20;

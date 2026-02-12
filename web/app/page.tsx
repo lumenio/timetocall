@@ -66,7 +66,7 @@ export default function HomePage() {
             Any question. Any language. Just brief the agent and get it done.
           </p>
           <div className="mt-10">
-            <Button asChild size="lg" className="rounded-full px-8 py-6 font-mono text-xs uppercase tracking-[0.1em]">
+            <Button asChild size="lg" className="animate-cta-breathe rounded-full px-8 py-6 font-mono text-xs uppercase tracking-[0.1em]">
               <Link href="/call">
                 Make a Call
                 <ArrowRight />
