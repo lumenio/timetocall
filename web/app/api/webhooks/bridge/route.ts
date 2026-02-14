@@ -49,15 +49,40 @@ export async function POST(request: Request) {
     }
 
     case "call_completed": {
-      const { summary, duration_seconds, transcript } = body;
+      const { summary, duration_seconds, transcript, status } = body;
+      const isFailed = status === "failed";
       const update: Record<string, unknown> = {
-        status: "completed",
+        status: isFailed ? "failed" : "completed",
         completed_at: new Date().toISOString(),
       };
       if (summary) update.summary = summary;
       if (duration_seconds) update.duration_seconds = duration_seconds;
       if (transcript) update.transcript = transcript;
       await supabase.from("calls").update(update).eq("id", call_id);
+
+      // Refund credit if call never connected
+      if (isFailed) {
+        const { data: call } = await supabase
+          .from("calls")
+          .select("user_id, cost_credits")
+          .eq("id", call_id)
+          .single();
+
+        if (call?.user_id) {
+          const refund = call.cost_credits ?? 1;
+          const { data: userData } = await supabase
+            .from("users")
+            .select("credits")
+            .eq("id", call.user_id)
+            .single();
+          if (userData) {
+            await supabase
+              .from("users")
+              .update({ credits: (userData.credits ?? 0) + refund })
+              .eq("id", call.user_id);
+          }
+        }
+      }
       break;
     }
 
