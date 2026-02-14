@@ -600,6 +600,10 @@ async def _complete_call(
     if state.status == "completed" or state.status == "failed":
         return
 
+    # If the call was never connected, treat it as failed (triggers credit refund)
+    if not failed and not state.connected_time:
+        failed = True
+
     # Cancel the persistent Gemini reader task
     if state._gemini_reader_task:
         state._gemini_reader_task.cancel()
